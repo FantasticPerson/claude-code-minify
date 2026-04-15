@@ -1,6 +1,6 @@
 {
   "name": "claude-code-minify",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "files": [
     "dist/index.js",
@@ -9,6 +9,14 @@
     "dist/index.d.cts",
     "docs/README.zh-CN.md"
   ],
+  "homepage": "https://github.com/FantasticPerson/claude-code-minify",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FantasticPerson/claude-code-minify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FantasticPerson/claude-code-minify/issues"
+  },
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
