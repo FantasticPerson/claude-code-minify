@@ -1,6 +1,6 @@
 # claude-code-minify
 
-**[中文](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md)** | English
+**[中文](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md)** | English
 
 > A lightweight SDK extracted from [Claude Code](https://github.com/anthropics/claude-code) CLI (v2.1.88). Stripped of terminal UI, CLI framework, daemon, WebSocket bridging, IDE integration and all non-essential modules — keeping only the core AI coding assistant capabilities: multi-turn conversation, tool use, streaming, skills, and memory.
 
@@ -10,13 +10,13 @@
 
 | Document | Description |
 |----------|-------------|
-| [Full Usage Guide (Chinese)](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md) | Complete API reference, configuration, examples, FAQ, and comparison with the original Claude Code |
-| [Comparison & Use Cases](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#与原版-claude-code-的对比) | Detailed comparison table between Claude Code CLI and claude-code-minify |
-| [Core API Reference](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#核心-api) | ClaudeSDK, Session, streaming, custom tools, skills, memory |
-| [Built-in Tools](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#内置工具) | file_read, file_write, file_edit, bash, grep, glob, todo_write, ask_user |
-| [Provider Guide](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#provider-详解) | OpenAI, Anthropic, and custom providers |
-| [Type Reference](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#类型定义参考) | Full TypeScript type definitions |
-| [Build & Publish](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#构建与发布) | Build commands, npm publishing, dual-format output |
+| [Full Usage Guide (Chinese)](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md) | Complete API reference, configuration, examples, FAQ, and comparison with the original Claude Code |
+| [Comparison & Use Cases](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#与原版-claude-code-的对比) | Detailed comparison table between Claude Code CLI and claude-code-minify |
+| [Core API Reference](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#核心-api) | ClaudeSDK, Session, streaming, custom tools, skills, memory |
+| [Built-in Tools](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#内置工具) | file_read, file_write, file_edit, bash, grep, glob, todo_write, ask_user |
+| [Provider Guide](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#provider-详解) | OpenAI, Anthropic, and custom providers |
+| [Type Reference](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#类型定义参考) | Full TypeScript type definitions |
+| [Build & Publish](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#构建与发布) | Build commands, npm publishing, dual-format output |
 
 ---
 
@@ -48,7 +48,7 @@
 | Plugins | Marketplace | Custom tools via API |
 | License | Requires Claude subscription | **Use your own API key** |
 
-> See the [full comparison table](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#与原版-claude-code-的对比) for 25+ dimensions.
+> See the [full comparison table](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#与原版-claude-code-的对比) for 25+ dimensions.
 
 ## Use Cases
 
@@ -61,7 +61,7 @@
 | Multi-provider support (OpenAI, DeepSeek, Ollama) | Out-of-the-box experience |
 | Embedding AI coding in your own product | Team collaboration features |
 
-> See [detailed use cases](https://github.com/FantasticPerson/claude-code-minify/blob/minify/docs/README.zh-CN.md#适用场景).
+> See [detailed use cases](https://github.com/FantasticPerson/claude-code-minify/blob/main/docs/README.zh-CN.md#适用场景).
 
 ---
 

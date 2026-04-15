@@ -1,6 +1,6 @@
 # claude-code-minify
 
-中文 | **[English](https://github.com/FantasticPerson/claude-code-minify/blob/minify/README.md)**
+中文 | **[English](https://github.com/FantasticPerson/claude-code-minify/blob/main/README.md)**
 
 > [Claude Code](https://github.com/anthropics/claude-code) 的轻量级 SDK 版本。从原版 Claude Code CLI（v2.1.88）的源码中提取并重写了核心逻辑，去除了终端 UI、CLI 框架、守护进程、WebSocket 桥接、IDE 集成等非核心模块，保留了 AI 编码助手的核心能力——多轮对话、工具调用、流式输出、技能系统和记忆管理。
 
