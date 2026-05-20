@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { checkFileSecurity } from './security.js'
 
 function matchGlob(pattern: string, filename: string): boolean {
   // Convert simple glob patterns to regex
@@ -46,6 +47,8 @@ export const globTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const searchPath = params.path ? path.resolve(ctx.workingDir, params.path) : ctx.workingDir
+    const secErr = checkFileSecurity(searchPath, ctx.workingDir, ctx.security?.file)
+    if (secErr) return { output: secErr, isError: true }
     try {
       const limit = 100
       const files: string[] = []

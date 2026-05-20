@@ -67,6 +67,10 @@ export class OpenAIProvider implements LLMProvider {
       if (delta.content) {
         yield { type: 'text_delta', text: delta.content }
       }
+      // 兑容智谱 GLM 等带 reasoning_content 的模型：作为独立 thinking 事件，不作为最终文本输出
+      if ((delta as any).reasoning_content) {
+        yield { type: 'thinking_delta' as any, text: (delta as any).reasoning_content }
+      }
 
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {
@@ -150,7 +154,25 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   private convertTools(tools: { name: string; description: string; inputSchema: Record<string, any> }[]): OpenAI.ChatCompletionTool[] {
-    return tools.map(t => ({ type: 'function' as const, function: { name: t.name, description: t.description, parameters: t.inputSchema } }))
+    const sanitize = (s: any): any => {
+      if (!s || typeof s !== 'object') return s
+      if (Array.isArray(s)) return s.map(sanitize)
+      const out: Record<string, any> = {}
+      for (const k of Object.keys(s)) {
+        if (k === 'exclusiveMinimum' && typeof s[k] === 'boolean') {
+          if (s[k] === true && typeof s.minimum === 'number') {
+            // OpenAPI3 -> JSON Schema 7: 'exclusiveMinimum: true + minimum: N' → 'minimum: N+1'(近似) ，安全起见只保留 minimum
+          }
+          continue
+        }
+        if (k === 'exclusiveMaximum' && typeof s[k] === 'boolean') {
+          continue
+        }
+        out[k] = sanitize(s[k])
+      }
+      return out
+    }
+    return tools.map(t => ({ type: 'function' as const, function: { name: t.name, description: t.description, parameters: sanitize(t.inputSchema) } }))
   }
 
   private extractToolUses(message: OpenAI.ChatCompletionAssistantMessageParam): ToolUseBlock[] {

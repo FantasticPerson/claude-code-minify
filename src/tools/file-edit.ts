@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { checkFileSecurity } from './security.js'
 
 export const fileEditTool: ToolSpec = {
   name: 'file_edit',
@@ -14,6 +15,8 @@ export const fileEditTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const filePath = path.resolve(ctx.workingDir, params.file_path)
+    const secErr = checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
+    if (secErr) return { output: secErr, isError: true }
     if (params.old_string === params.new_string) return { output: 'Error: old_string and new_string are identical', isError: true }
     try {
       const content = await fs.readFile(filePath, 'utf-8')

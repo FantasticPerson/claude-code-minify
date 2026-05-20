@@ -72,11 +72,31 @@ export type StreamEvent =
   | { type: 'tool_use_end'; id: string; name: string; input: Record<string, any> }
   | { type: 'message_end'; usage: UsageInfo; stopReason: string }
 
+// ============ Security ============
+
+export interface BashSecurityConfig {
+  protectedPorts?: number[]
+  blockedSystemPaths?: string[]
+  restrictToProjectDir?: boolean
+}
+
+export interface FileSecurityConfig {
+  restrictToProjectDir?: boolean
+  blockedPaths?: string[]
+  maxFileSize?: number
+}
+
+export interface SecurityConfig {
+  bash?: BashSecurityConfig
+  file?: FileSecurityConfig
+}
+
 // ============ Tool ============
 
 export interface ToolContext {
   workingDir: string
   sessionId: string
+  security?: SecurityConfig
   onProgress?: (msg: string) => void
 }
 
@@ -145,7 +165,9 @@ export interface ClaudeSDKConfig {
   model: string
   workingDir: string
   maxTokens?: number
+  contextWindow?: number
   maxToolRounds?: number
+  security?: SecurityConfig
   autoLoadClaudeMD?: boolean
   instructions?: string
   skillsDir?: string

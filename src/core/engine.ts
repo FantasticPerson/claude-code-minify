@@ -1,8 +1,9 @@
 import {
   Message, ToolUseBlock, ToolResultBlock, EngineResult, EngineEvent,
-  ToolContext, ToolResult, ChatParams, UsageInfo,
+  ToolContext, ToolResult, ChatParams, UsageInfo, SecurityConfig,
 } from './types.js'
 import { LLMProvider } from '../providers/base.js'
+import { estimateMessagesTokens } from '../providers/base.js'
 import { ToolSpec, createToolDefinition } from '../tools/base.js'
 import { buildSystemPrompt, SystemPromptOptions } from './system-prompt.js'
 import { ContextManager } from './context.js'
@@ -13,8 +14,10 @@ export interface EngineOptions {
   tools: Map<string, ToolSpec>
   model: string
   maxTokens: number
+  contextWindow?: number
   maxToolRounds: number
   workingDir: string
+  security?: SecurityConfig
   systemPromptOptions: SystemPromptOptions
   abortSignal?: AbortSignal
   onText?: (text: string) => void
@@ -29,6 +32,7 @@ export class Engine {
   private maxTokens: number
   private maxToolRounds: number
   private workingDir: string
+  private security?: SecurityConfig
   private systemPromptOptions: SystemPromptOptions
   private context: ContextManager
   private abortSignal?: AbortSignal
@@ -43,8 +47,9 @@ export class Engine {
     this.maxTokens = options.maxTokens
     this.maxToolRounds = options.maxToolRounds
     this.workingDir = options.workingDir
+    this.security = options.security
     this.systemPromptOptions = options.systemPromptOptions
-    this.context = new ContextManager()
+    this.context = new ContextManager((options.contextWindow || 200000) - (options.maxTokens || 4096))
     this.abortSignal = options.abortSignal
     this.onText = options.onText
     this.onToolStart = options.onToolStart
@@ -83,6 +88,10 @@ export class Engine {
       }
 
       const messages = this.context.getMessages()
+      const ctxTokens = estimateMessagesTokens(messages)
+      const ctxBudget = (this.context as any).maxTokens * 0.8
+      console.log(`[Context] round=${round} msgs=${messages.length} est_tokens=${ctxTokens} budget=${Math.round(ctxBudget)} ctxMax=${(this.context as any).maxTokens} engineMaxOut=${this.maxTokens} ${ctxTokens > ctxBudget ? '⚠️ OVER_THRESHOLD' : ''}`)
+
       const params: ChatParams = {
         model: this.model,
         system: [{ type: 'text', text: systemText }],
@@ -118,6 +127,9 @@ export class Engine {
 
       totalUsage.inputTokens += usage.inputTokens
       totalUsage.outputTokens += usage.outputTokens
+      if (usage.inputTokens > 0) {
+        console.log(`[Context] API usage: input=${usage.inputTokens} output=${usage.outputTokens} cumulative_input=${totalUsage.inputTokens} cumulative_output=${totalUsage.outputTokens}`)
+      }
 
       if (toolUses.length === 0) {
         totalText += responseText
@@ -145,7 +157,7 @@ export class Engine {
         this.onToolStart?.(tu.name, tu.input)
         yield { type: 'tool_start', name: tu.name, params: tu.input }
 
-        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: 'session' }
+        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: 'session', security: this.security }
         let result: ToolResult
         try {
           result = await tool.execute(tu.input, toolCtx)

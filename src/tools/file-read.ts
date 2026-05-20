@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { checkFileSecurity } from './security.js'
 
 export const fileReadTool: ToolSpec = {
   name: 'file_read',
@@ -13,11 +14,13 @@ export const fileReadTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const filePath = path.resolve(ctx.workingDir, params.file_path)
-    if (filePath.startsWith('/dev/')) return { output: `Error: Cannot read device files`, isError: true }
+    const secErr = checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
+    if (secErr) return { output: secErr, isError: true }
     try {
       const stat = await fs.stat(filePath)
       if (stat.isDirectory()) return { output: `Error: ${filePath} is a directory, not a file`, isError: true }
-      if (stat.size > 1024 * 1024) return { output: `Error: File too large (${Math.round(stat.size / 1024)}KB). Use offset/limit to read portions.`, isError: true }
+      const maxFileSize = ctx.security?.file?.maxFileSize ?? 1024 * 1024
+      if (stat.size > maxFileSize) return { output: `Error: File too large (${Math.round(stat.size / 1024)}KB). Use offset/limit to read portions.`, isError: true }
       const content = await fs.readFile(filePath, 'utf-8')
       const lines = content.split('\n')
       const offset = params.offset ?? 0

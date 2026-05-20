@@ -45,3 +45,5 @@ dist/
 bun.lock
 
 .claude/
+
+claude-code-cli/

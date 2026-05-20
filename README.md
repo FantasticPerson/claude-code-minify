@@ -133,12 +133,62 @@ interface ClaudeSDKConfig {
   workingDir: string                 // Required
   baseURL?: string                   // For compatible APIs
   maxTokens?: number                 // Default: 4096
+  contextWindow?: number             // Default: 200000
   maxToolRounds?: number             // Default: 50
   autoLoadClaudeMD?: boolean         // Default: true
   instructions?: string              // Extra system instructions
   skillsDir?: string                 // Custom skills directory
+  security?: SecurityConfig          // Tool security policies
 }
 ```
+
+### Security Configuration
+
+All built-in tools support configurable security policies. No restrictions are applied by default.
+
+```typescript
+interface SecurityConfig {
+  bash?: BashSecurityConfig
+  file?: FileSecurityConfig
+}
+
+interface BashSecurityConfig {
+  protectedPorts?: number[]           // Ports that cannot be killed
+  blockedSystemPaths?: string[]       // Blocked absolute paths
+  restrictToProjectDir?: boolean      // Restrict cd to project dir
+}
+
+interface FileSecurityConfig {
+  restrictToProjectDir?: boolean      // Restrict file ops to project dir
+  blockedPaths?: string[]             // Blocked path prefixes
+  maxFileSize?: number                // Max file size in bytes
+}
+```
+
+#### Example
+
+```typescript
+const sdk = new ClaudeSDK({
+  provider: 'openai',
+  apiKey: 'sk-xxx',
+  model: 'gpt-4o',
+  workingDir: '/home/user/my-project',
+  security: {
+    bash: {
+      protectedPorts: [4999, 5173],
+      blockedSystemPaths: ['/usr', '/etc', '/var'],
+      restrictToProjectDir: true,
+    },
+    file: {
+      restrictToProjectDir: true,
+      blockedPaths: ['/etc/passwd'],
+      maxFileSize: 1024 * 1024,  // 1MB
+    },
+  },
+})
+```
+
+When `security` is not configured, all tools operate without restrictions.
 
 ### Connecting Different LLM Services
 
@@ -213,16 +263,16 @@ sdk.registerTool({
 
 ## Built-in Tools
 
-| Tool | Purpose | Key Params |
-|------|---------|------------|
-| `file_read` | Read file content | `file_path`, `offset`, `limit` |
-| `file_write` | Create/overwrite file | `file_path`, `content` |
-| `file_edit` | Find & replace text | `file_path`, `old_string`, `new_string`, `replace_all` |
-| `bash` | Execute shell command | `command`, `timeout` |
-| `grep` | Search file content (ripgrep) | `pattern`, `path`, `glob`, `output_mode` |
-| `glob` | Search file names | `pattern`, `path` |
-| `todo_write` | Task list management | `todos` |
-| `ask_user` | Ask user a question | `question` |
+| Tool | Purpose | Key Params | Security Config |
+|------|---------|------------|----------------|
+| `file_read` | Read file content | `file_path`, `offset`, `limit` | `file.restrictToProjectDir`, `file.blockedPaths`, `file.maxFileSize` |
+| `file_write` | Create/overwrite file | `file_path`, `content` | `file.restrictToProjectDir`, `file.blockedPaths`, `file.maxFileSize` |
+| `file_edit` | Find & replace text | `file_path`, `old_string`, `new_string`, `replace_all` | `file.restrictToProjectDir`, `file.blockedPaths` |
+| `bash` | Execute shell command | `command`, `timeout` | `bash.protectedPorts`, `bash.blockedSystemPaths`, `bash.restrictToProjectDir` |
+| `grep` | Search file content (ripgrep) | `pattern`, `path`, `glob`, `output_mode` | `file.restrictToProjectDir`, `file.blockedPaths` |
+| `glob` | Search file names | `pattern`, `path` | `file.restrictToProjectDir`, `file.blockedPaths` |
+| `todo_write` | Task list management | `todos` | — |
+| `ask_user` | Ask user a question | `question` | — |
 
 ## API Reference
 
@@ -285,6 +335,8 @@ claude-code-minify/
 │   │   ├── openai.ts         # OpenAI adapter
 │   │   └── anthropic.ts      # Anthropic adapter
 │   ├── tools/                # 8 core tools
+│   │   ├── security.ts       # Shared security checks
+│   │   └── ...               # Individual tool files
 │   ├── skills/               # Skills system
 │   ├── config/               # CLAUDE.md loader
 │   └── memory/               # Memory system

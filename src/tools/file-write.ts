@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { checkFileSecurity } from './security.js'
 
 export const fileWriteTool: ToolSpec = {
   name: 'file_write',
@@ -12,6 +13,10 @@ export const fileWriteTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const filePath = path.resolve(ctx.workingDir, params.file_path)
+    const secErr = checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
+    if (secErr) return { output: secErr, isError: true }
+    const maxFileSize = ctx.security?.file?.maxFileSize ?? Infinity
+    if (params.content.length > maxFileSize) return { output: `Error: 内容超过大小限制 (${maxFileSize} bytes)`, isError: true }
     try {
       const dir = path.dirname(filePath)
       await fs.mkdir(dir, { recursive: true })

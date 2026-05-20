@@ -98,8 +98,10 @@ export class ClaudeSDK {
       tools: this.tools,
       model: this.config.model,
       maxTokens: this.config.maxTokens,
+      contextWindow: this.config.contextWindow,
       maxToolRounds: this.config.maxToolRounds,
       workingDir: this.config.workingDir,
+      security: this.config.security,
       systemPromptOptions: {
         workingDir: this.config.workingDir,
         customInstructions: this.config.instructions,

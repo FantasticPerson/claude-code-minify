@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ToolSpec } from './base.js'
 import { exec } from 'child_process'
 import * as path from 'path'
+import { checkFileSecurity } from './security.js'
 
 export const grepTool: ToolSpec = {
   name: 'grep',
@@ -16,6 +17,8 @@ export const grepTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const searchPath = path.resolve(ctx.workingDir, params.path || '.')
+    const secErr = checkFileSecurity(searchPath, ctx.workingDir, ctx.security?.file)
+    if (secErr) return { output: secErr, isError: true }
     const outputMode = params.output_mode ?? 'files_with_matches'
     const args: string[] = ['rg', '--hidden', '--glob', '!.git']
     if (params['-i']) args.push('-i')

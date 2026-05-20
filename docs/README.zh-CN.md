@@ -19,7 +19,7 @@
 | **LLM 提供商** | 仅 Anthropic | **Anthropic + OpenAI**（含所有兼容 API） |
 | **交互方式** | 终端 TUI（Ink + React） | 纯 API 调用（可嵌入任何应用） |
 | **终端 UI** | 完整（进度条、彩色输出、vim 模式） | 无（由宿主应用自行控制展示） |
-| **权限系统** | 复杂的交互式权限提示 | 无（宿主应用自行管理） |
+| **权限系统** | 复杂的交互式权限提示 | 可配置的安全策略（`SecurityConfig`） |
 | **MCP 服务器** | 支持 | 不支持 |
 | **IDE 集成** | VS Code / JetBrains | 不支持 |
 | **远程会话** | SSH / 桥接模式 | 不支持 |
@@ -29,7 +29,7 @@
 | **CLAUDE.md** | 支持 | 支持（加载逻辑相同） |
 | **技能系统** | 内置 + 插件技能 | 内置 6 个技能 + 自定义技能 |
 | **记忆管理** | 自动记忆 | 手动 API 调用 |
-| **上下文管理** | 自动裁剪 | 自动裁剪（逻辑相同） |
+| **上下文管理** | 自动裁剪 | 自动裁剪 + 两阶段压缩策略 |
 | **流式输出** | 终端渲染 | AsyncGenerator 事件流 |
 | **自定义工具** | 通过插件/Agent | `registerTool()` API |
 | **自定义 Provider** | 不支持 | 支持实现 `LLMProvider` 接口 |
@@ -44,7 +44,7 @@
 - **8 个内置工具** — `file_read`、`file_write`、`file_edit`、`bash`、`grep`、`glob`、`todo_write`、`ask_user`
 - **CLAUDE.md 项目指令加载** — 完整的多文件加载、合并、优先级逻辑
 - **系统提示词构建** — 核心提示词 + 项目指令 + 记忆 + 技能 + 环境信息
-- **上下文窗口管理** — 自动估算 token 用量，超限时智能裁剪历史消息
+- **上下文窗口管理** — 自动估算 token 用量，超限时两阶段智能裁剪历史消息
 - **技能系统** — 6 个内置技能（brainstorming、debugging、tdd 等）
 
 ### 去掉了什么
@@ -268,6 +268,9 @@ interface ClaudeSDKConfig {
   /** 最大输出 token 数，默认 4096 */
   maxTokens?: number
 
+  /** 上下文窗口大小，默认 200000。自动计算可用上下文 = contextWindow - maxTokens */
+  contextWindow?: number
+
   /** 最大工具调用轮次，默认 50 */
   maxToolRounds?: number
 
@@ -280,10 +283,69 @@ interface ClaudeSDKConfig {
   /** 自定义技能目录路径 */
   skillsDir?: string
 
+  /** 工具安全策略配置 */
+  security?: SecurityConfig
+
   /** 用户交互回调函数，用于处理 ask_user 工具的提问 */
   askUserCallback?: (question: string) => Promise<string>
 }
 ```
+
+### 安全策略配置
+
+所有内置工具支持可配置的安全策略。默认情况下无任何限制。
+
+```typescript
+interface SecurityConfig {
+  /** bash 工具安全配置 */
+  bash?: BashSecurityConfig
+  /** 文件工具安全配置（file_read、file_write、file_edit、glob、grep） */
+  file?: FileSecurityConfig
+}
+
+interface BashSecurityConfig {
+  /** 受保护端口，禁止通过 kill/lsof/fuser 等命令杀掉 */
+  protectedPorts?: number[]
+  /** 禁止访问的系统绝对路径 */
+  blockedSystemPaths?: string[]
+  /** 是否限制 cd 命令仅能在项目目录内跳转 */
+  restrictToProjectDir?: boolean
+}
+
+interface FileSecurityConfig {
+  /** 是否限制文件操作仅能在项目目录内 */
+  restrictToProjectDir?: boolean
+  /** 禁止访问的路径前缀列表 */
+  blockedPaths?: string[]
+  /** 文件大小上限（字节），影响 file_read 的读取限制和 file_write 的写入限制 */
+  maxFileSize?: number
+}
+```
+
+#### 配置示例
+
+```typescript
+const sdk = new ClaudeSDK({
+  provider: 'openai',
+  apiKey: 'sk-xxx',
+  model: 'gpt-4o',
+  workingDir: '/home/user/my-project',
+  security: {
+    bash: {
+      protectedPorts: [4999, 5173],         // 保护后端和前端端口
+      blockedSystemPaths: ['/usr', '/etc'],  // 禁止访问系统目录
+      restrictToProjectDir: true,            // cd 仅限项目目录
+    },
+    file: {
+      restrictToProjectDir: true,            // 文件操作仅限项目目录
+      blockedPaths: ['/etc/passwd'],         // 禁止读取敏感文件
+      maxFileSize: 1024 * 1024,              // 文件大小上限 1MB
+    },
+  },
+})
+```
+
+不配置 `security` 时，所有工具无任何限制，行为与原始代码一致。传空数组/`false` 即可关闭对应检查。
 
 ### 使用示例
 
@@ -603,6 +665,9 @@ interface ToolContext {
   /** 会话 ID */
   sessionId: string
 
+  /** 安全策略配置 */
+  security?: SecurityConfig
+
   /** 进度回调（可选） */
   onProgress?: (msg: string) => void
 }
@@ -911,9 +976,9 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。
 
 **行为规则：**
 - 路径相对于 `workingDir` 解析
-- 禁止读取 `/dev/*` 路径
+- 支持通过 `security.file` 配置路径限制和文件大小限制
 - 不支持读取目录
-- 文件大小超过 1 MB 时返回错误
+- 文件大小超过 `maxFileSize`（默认 1 MB）时返回错误
 - 返回格式为 `行号\t内容`
 
 **示例：**
@@ -982,6 +1047,8 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。
 
 **行为规则：**
 - 工作目录为 `workingDir`
+- 支持通过 `security.bash` 配置受保护端口、禁止访问的系统路径、目录跳转限制
+- 支持 `cd xxx && command` 形式的目录切换（可通过 `restrictToProjectDir` 限制）
 - 继承当前进程的环境变量 (`process.env`)
 - `maxBuffer`: 10 MB
 - 输出超过 50,000 字符时自动截断（保留前 25K 和后 25K）
@@ -1209,12 +1276,34 @@ SDK 内置上下文窗口管理器（`ContextManager`），自动在消息过长
 
 ### 工作机制
 
+上下文窗口大小由 `contextWindow` 配置项控制，可用上下文 = `contextWindow - maxTokens`。
+
 | 参数 | 值 | 说明 |
 |------|-----|------|
 | 默认上下文大小 | 200,000 tokens | 模拟的上下文窗口大小 |
-| 裁剪触发阈值 | 80%（160,000 tokens） | 超过此值开始裁剪 |
-| 裁剪目标 | 60%（120,000 tokens） | 裁剪到此比例 |
+| 裁剪触发阈值 | 80% | 超过此值开始裁剪 |
+| 裁剪目标 | 60% | 裁剪到此比例 |
 | 最少保留 | 2 条消息 | 保证基本上下文 |
+
+### 两阶段裁剪策略
+
+当估算 token 超过 80% 阈值时，按两阶段处理：
+
+**第一阶段：智能压缩** — 保留最近 6 轮（12 条消息）不动，对早期消息进行压缩：
+
+- `tool_result`：超过 500 字符的，只保留前 3 行和后 2 行
+- `file_write` / `file_edit` 工具调用中的大字段（content、old_string、new_string）：替换为摘要
+
+**第二阶段：尾部保留** — 如果压缩后仍超标，从末尾保留消息直到 token 预算满足 60% 目标。
+
+### 上下文监控
+
+Engine 会在每轮工具调用时输出上下文使用日志：
+
+```
+[Context] round=3 msgs=15 est_tokens=45000 budget=157286 ctxMax=195904 engineMaxOut=4096
+[Context] API usage: input=12000 output=500 cumulative_input=35000 cumulative_output=1500
+```
 
 ### Token 估算方式
 
@@ -1318,6 +1407,7 @@ type StreamEvent =
 interface ToolContext {
   workingDir: string
   sessionId: string
+  security?: SecurityConfig
   onProgress?: (msg: string) => void
 }
 
@@ -1389,6 +1479,30 @@ interface SystemBlock {
   type: 'text'
   text: string
   cacheControl?: { type: 'ephemeral' }
+}
+```
+
+### 安全策略类型
+
+```typescript
+/** 安全策略配置 */
+interface SecurityConfig {
+  bash?: BashSecurityConfig
+  file?: FileSecurityConfig
+}
+
+/** bash 工具安全配置 */
+interface BashSecurityConfig {
+  protectedPorts?: number[]
+  blockedSystemPaths?: string[]
+  restrictToProjectDir?: boolean
+}
+
+/** 文件工具安全配置 */
+interface FileSecurityConfig {
+  restrictToProjectDir?: boolean
+  blockedPaths?: string[]
+  maxFileSize?: number
 }
 ```
 
