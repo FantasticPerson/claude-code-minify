@@ -86,6 +86,39 @@ export class ContextManager {
       result.unshift(this.messages[i])
     }
 
+    // Ensure tool_use/tool_result pairing is complete after truncation
+    while (result.length > 0) {
+      const first = result[0]
+      if (first.role === 'assistant' && first.content.some(b => b.type === 'tool_use')) {
+        const toolUseIds = new Set(
+          first.content.filter(b => b.type === 'tool_use').map(b => b.id)
+        )
+        if (result.length >= 2 && result[1].role === 'user') {
+          const resultIds = new Set(
+            (result[1].content || [])
+              .filter(b => b.type === 'tool_result')
+              .map(b => b.toolUseId)
+          )
+          if ([...toolUseIds].some(id => resultIds.has(id))) break
+        }
+        result.shift()
+        if (result.length > 0 && result[0].role === 'user' && result[0].content.some(b => b.type === 'tool_result')) {
+          result.shift()
+        }
+        continue
+      }
+      if (first.role === 'user' && first.content.some(b => b.type === 'tool_result')) {
+        result.shift()
+        continue
+      }
+      break
+    }
+
+    // Ensure first message is from user
+    if (result.length > 0 && result[0].role === 'assistant') {
+      result.unshift({ role: 'user', content: [{ type: 'text', text: '[Context trimmed]' }] })
+    }
+
     this.messages = result
   }
 }
