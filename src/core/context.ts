@@ -3,6 +3,10 @@ import { estimateMessagesTokens } from '../providers/base.js'
 
 const COMPRESS_RECENT_ROUNDS = 6
 const TOOL_RESULT_COMPRESS_THRESHOLD = 500
+// Safety margin: estimated tokens only cover messages,
+// but API also includes system prompt + tool definitions.
+// This factor shrinks the effective budget to compensate.
+const BUDGET_MARGIN = 0.7
 
 const COMPACTABLE_TOOLS = new Set([
   'file_read',
@@ -38,9 +42,14 @@ export class ContextManager {
     return this.messages.length
   }
 
+  get effectiveBudget(): number {
+    return this.maxTokens * BUDGET_MARGIN
+  }
+
   private trimMessages(): void {
+    const budget = this.effectiveBudget
     const estimated = estimateMessagesTokens(this.messages)
-    if (estimated <= this.maxTokens * 0.8) return
+    if (estimated <= budget) return
 
     const protectedStart = Math.max(0, this.messages.length - COMPRESS_RECENT_ROUNDS * 2)
 
@@ -73,16 +82,16 @@ export class ContextManager {
     }
 
     const reestimated = estimateMessagesTokens(this.messages)
-    if (reestimated <= this.maxTokens * 0.8) return
+    if (reestimated <= budget) return
 
     const result: Message[] = []
-    let budget = 0
-    const target = this.maxTokens * 0.6
+    let used = 0
+    const target = budget * 0.75
 
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const msgTokens = estimateMessagesTokens([this.messages[i]])
-      if (budget + msgTokens > target && result.length >= 2) break
-      budget += msgTokens
+      if (used + msgTokens > target && result.length >= 2) break
+      used += msgTokens
       result.unshift(this.messages[i])
     }
 

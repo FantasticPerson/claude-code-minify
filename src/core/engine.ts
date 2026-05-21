@@ -2,8 +2,7 @@ import {
   Message, ToolUseBlock, ToolResultBlock, EngineResult, EngineEvent,
   ToolContext, ToolResult, ChatParams, UsageInfo, SecurityConfig,
 } from './types.js'
-import { LLMProvider } from '../providers/base.js'
-import { estimateMessagesTokens } from '../providers/base.js'
+import { LLMProvider, estimateMessagesTokens, estimateToolDefsTokens, estimateSystemPromptTokens } from '../providers/base.js'
 import { ToolSpec, createToolDefinition } from '../tools/base.js'
 import { buildSystemPrompt, SystemPromptOptions } from './system-prompt.js'
 import { ContextManager } from './context.js'
@@ -88,9 +87,12 @@ export class Engine {
       }
 
       const messages = this.context.getMessages()
-      const ctxTokens = estimateMessagesTokens(messages)
-      const ctxBudget = (this.context as any).maxTokens * 0.8
-      console.log(`[Context] round=${round} msgs=${messages.length} est_tokens=${ctxTokens} budget=${Math.round(ctxBudget)} ctxMax=${(this.context as any).maxTokens} engineMaxOut=${this.maxTokens} ${ctxTokens > ctxBudget ? '⚠️ OVER_THRESHOLD' : ''}`)
+      const msgTokens = estimateMessagesTokens(messages)
+      const sysTokens = estimateSystemPromptTokens([{ text: systemText }])
+      const toolDefTokens = estimateToolDefsTokens(toolDefs)
+      const ctxTokens = msgTokens + sysTokens + toolDefTokens
+      const ctxBudget = (this.context as any).effectiveBudget
+      console.log(`[Context] round=${round} msgs=${messages.length} est_tokens=${ctxTokens}(msg=${msgTokens}+sys=${sysTokens}+tools=${toolDefTokens}) budget=${Math.round(ctxBudget)} ctxMax=${(this.context as any).maxTokens} engineMaxOut=${this.maxTokens} ${ctxTokens > ctxBudget ? '⚠️ OVER_THRESHOLD' : ''}`)
 
       const params: ChatParams = {
         model: this.model,
