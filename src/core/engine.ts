@@ -90,9 +90,8 @@ export class Engine {
       const msgTokens = estimateMessagesTokens(messages)
       const sysTokens = estimateSystemPromptTokens([{ text: systemText }])
       const toolDefTokens = estimateToolDefsTokens(toolDefs)
-      const ctxTokens = msgTokens + sysTokens + toolDefTokens
-      const ctxBudget = (this.context as any).effectiveBudget
-      console.log(`[Context] round=${round} msgs=${messages.length} est_tokens=${ctxTokens}(msg=${msgTokens}+sys=${sysTokens}+tools=${toolDefTokens}) budget=${Math.round(ctxBudget)} ctxMax=${(this.context as any).maxTokens} engineMaxOut=${this.maxTokens} ${ctxTokens > ctxBudget ? '⚠️ OVER_THRESHOLD' : ''}`)
+      const estTokens = msgTokens + sysTokens + toolDefTokens
+      console.log(`[Context] round=${round} msgs=${messages.length} est=${estTokens}(msg=${msgTokens}+sys=${sysTokens}+tools=${toolDefTokens})`)
 
       const params: ChatParams = {
         model: this.model,
@@ -132,6 +131,9 @@ export class Engine {
       if (usage.inputTokens > 0) {
         console.log(`[Context] API usage: input=${usage.inputTokens} output=${usage.outputTokens} cumulative_input=${totalUsage.inputTokens} cumulative_output=${totalUsage.outputTokens}`)
       }
+
+      // Use real token usage to decide compression — much more accurate than estimation
+      this.context.compressIfNeeded(usage.inputTokens)
 
       if (toolUses.length === 0) {
         totalText += responseText

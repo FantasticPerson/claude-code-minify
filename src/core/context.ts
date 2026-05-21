@@ -3,10 +3,6 @@ import { estimateMessagesTokens } from '../providers/base.js'
 
 const COMPRESS_RECENT_ROUNDS = 6
 const TOOL_RESULT_COMPRESS_THRESHOLD = 500
-// Safety margin: estimated tokens only cover messages,
-// but API also includes system prompt + tool definitions.
-// This factor shrinks the effective budget to compensate.
-const BUDGET_MARGIN = 0.7
 
 const COMPACTABLE_TOOLS = new Set([
   'file_read',
@@ -30,7 +26,6 @@ export class ContextManager {
   }
 
   getMessages(): Message[] {
-    this.trimMessages()
     return this.messages
   }
 
@@ -42,15 +37,31 @@ export class ContextManager {
     return this.messages.length
   }
 
-  get effectiveBudget(): number {
-    return this.maxTokens * BUDGET_MARGIN
+  /**
+   * Compress context based on actual API token usage.
+   * Called after each API response with the real inputTokens from the provider.
+   * This is more reliable than any estimation-based approach.
+   */
+  compressIfNeeded(realInputTokens: number): boolean {
+    // Trigger at 80% of context window, aggressive trim to 60%
+    if (realInputTokens <= this.maxTokens * 0.8) return false
+
+    console.log(`[Context] compress triggered by actual usage: ${realInputTokens} > ${Math.round(this.maxTokens * 0.8)} (80% of ${this.maxTokens})`)
+
+    this.compressOldToolResults()
+
+    // Re-check with estimation after compressing tool results
+    // Use a conservative estimate: if we freed enough, skip truncation
+    const estimated = estimateMessagesTokens(this.messages)
+    const target = this.maxTokens * 0.6
+
+    if (estimated <= target) return true
+
+    this.truncateMessages(target)
+    return true
   }
 
-  private trimMessages(): void {
-    const budget = this.effectiveBudget
-    const estimated = estimateMessagesTokens(this.messages)
-    if (estimated <= budget) return
-
+  private compressOldToolResults(): void {
     const protectedStart = Math.max(0, this.messages.length - COMPRESS_RECENT_ROUNDS * 2)
 
     const compactableIds = new Set<string>()
@@ -80,13 +91,11 @@ export class ContextManager {
         }
       }
     }
+  }
 
-    const reestimated = estimateMessagesTokens(this.messages)
-    if (reestimated <= budget) return
-
+  private truncateMessages(target: number): void {
     const result: Message[] = []
     let used = 0
-    const target = budget * 0.75
 
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const msgTokens = estimateMessagesTokens([this.messages[i]])
