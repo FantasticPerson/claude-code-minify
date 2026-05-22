@@ -3,6 +3,7 @@ import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { checkFileSecurity } from './security.js'
+// DEFAULT_WRITE_MAX_FILE_SIZE = Infinity, no import needed
 
 export const fileWriteTool: ToolSpec = {
   name: 'file_write',
@@ -15,7 +16,9 @@ export const fileWriteTool: ToolSpec = {
     const filePath = path.resolve(ctx.workingDir, params.file_path)
     const secErr = checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
     if (secErr) return { output: secErr, isError: true }
-    const maxFileSize = ctx.security?.file?.maxFileSize ?? Infinity
+    const secLimit = ctx.security?.file?.maxFileSize ?? Infinity
+    const toolLimit = ctx.tools?.write?.maxFileSize ?? Infinity
+    const maxFileSize = Math.min(secLimit, toolLimit)
     if (params.content.length > maxFileSize) return { output: `Error: 内容超过大小限制 (${maxFileSize} bytes)`, isError: true }
     try {
       const dir = path.dirname(filePath)

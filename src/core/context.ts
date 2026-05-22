@@ -1,8 +1,10 @@
-import { Message } from './types.js'
+import { Message, ContextConfig } from './types.js'
 import { estimateMessagesTokens } from '../providers/base.js'
-
-const COMPRESS_RECENT_ROUNDS = 6
-const TOOL_RESULT_COMPRESS_THRESHOLD = 500
+import {
+  DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS,
+  DEFAULT_COMPRESS_TRIGGER_RATIO, DEFAULT_COMPRESS_TARGET_RATIO,
+  DEFAULT_COMPRESS_RECENT_ROUNDS, DEFAULT_TOOL_RESULT_COMPRESS_THRESHOLD,
+} from './defaults.js'
 
 const COMPACTABLE_TOOLS = new Set([
   'file_read',
@@ -16,9 +18,17 @@ const COMPACTABLE_TOOLS = new Set([
 export class ContextManager {
   private messages: Message[] = []
   private maxTokens: number
+  private compressTriggerRatio: number
+  private compressTargetRatio: number
+  private compressRecentRounds: number
+  private toolResultCompressThreshold: number
 
-  constructor(maxTokens: number = 200000) {
+  constructor(maxTokens: number = DEFAULT_CONTEXT_WINDOW - DEFAULT_MAX_TOKENS, config?: ContextConfig) {
     this.maxTokens = maxTokens
+    this.compressTriggerRatio = Math.max(0.1, Math.min(1, config?.compressionTriggerRatio ?? DEFAULT_COMPRESS_TRIGGER_RATIO))
+    this.compressTargetRatio = Math.max(0.1, Math.min(this.compressTriggerRatio, config?.compressionTargetRatio ?? DEFAULT_COMPRESS_TARGET_RATIO))
+    this.compressRecentRounds = config?.compressRecentRounds ?? DEFAULT_COMPRESS_RECENT_ROUNDS
+    this.toolResultCompressThreshold = config?.toolResultCompressThreshold ?? DEFAULT_TOOL_RESULT_COMPRESS_THRESHOLD
   }
 
   add(message: Message): void {
@@ -44,16 +54,16 @@ export class ContextManager {
    */
   compressIfNeeded(realInputTokens: number): boolean {
     // Trigger at 80% of context window, aggressive trim to 60%
-    if (realInputTokens <= this.maxTokens * 0.8) return false
+    if (realInputTokens <= this.maxTokens * this.compressTriggerRatio) return false
 
-    console.log(`[Context] compress triggered by actual usage: ${realInputTokens} > ${Math.round(this.maxTokens * 0.8)} (80% of ${this.maxTokens})`)
+    console.log(`[Context] compress triggered by actual usage: ${realInputTokens} > ${Math.round(this.maxTokens * this.compressTriggerRatio)} (${Math.round(this.compressTriggerRatio * 100)}% of ${this.maxTokens})`)
 
     this.compressOldToolResults()
 
     // Re-check with estimation after compressing tool results
     // Use a conservative estimate: if we freed enough, skip truncation
     const estimated = estimateMessagesTokens(this.messages)
-    const target = this.maxTokens * 0.6
+    const target = this.maxTokens * this.compressTargetRatio
 
     if (estimated <= target) return true
 
@@ -62,7 +72,7 @@ export class ContextManager {
   }
 
   private compressOldToolResults(): void {
-    const protectedStart = Math.max(0, this.messages.length - COMPRESS_RECENT_ROUNDS * 2)
+    const protectedStart = Math.max(0, this.messages.length - this.compressRecentRounds * 2)
 
     const compactableIds = new Set<string>()
     for (let i = 0; i < protectedStart; i++) {
@@ -84,7 +94,7 @@ export class ContextManager {
             block.type === 'tool_result'
             && compactableIds.has(block.toolUseId)
             && typeof block.content === 'string'
-            && block.content.length > TOOL_RESULT_COMPRESS_THRESHOLD
+            && block.content.length > this.toolResultCompressThreshold
           ) {
             block.content = `[Compressed: original ${block.content.split('\n').length} lines]`
           }

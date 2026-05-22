@@ -139,6 +139,57 @@ interface ClaudeSDKConfig {
   instructions?: string              // Extra system instructions
   skillsDir?: string                 // Custom skills directory
   security?: SecurityConfig          // Tool security policies
+  context?: ContextConfig            // Context compression tuning
+  tools?: ToolsConfig                // Tool behavior configuration
+}
+```
+
+### Context Configuration
+
+Fine-tune the context window compression behavior.
+
+```typescript
+interface ContextConfig {
+  compressionTriggerRatio?: number   // Trigger at this usage ratio, default 0.8
+  compressionTargetRatio?: number    // Compress down to this ratio, default 0.6
+  compressRecentRounds?: number      // Protect recent N rounds, default 6
+  toolResultCompressThreshold?: number // Compress tool results over this size, default 500
+}
+```
+
+### Tool Configuration
+
+Customize individual tool behavior. All fields are optional with sensible defaults.
+
+```typescript
+interface ToolsConfig {
+  bash?: {
+    defaultTimeout?: number          // Default command timeout (ms), default 120000
+    maxTimeout?: number              // Maximum allowed timeout (ms), default 600000
+    maxBuffer?: number               // Output buffer size (bytes), default 10485760
+    outputTruncateLimit?: number     // Truncate output at this length, default 50000
+  }
+  grep?: {
+    timeout?: number                 // Command timeout (ms), default 30000
+    maxColumns?: number              // Max column width, default 500
+    maxBuffer?: number               // Output buffer size (bytes), default 5242880
+    skipDirs?: string[]              // Directories to exclude, default ['.git']
+    extraSkipDirs?: string[]         // Additional dirs to exclude (appended to skipDirs)
+  }
+  glob?: {
+    maxResults?: number              // Max file results, default 100
+    skipDirs?: string[]              // Directories to skip, default ['node_modules', '.git']
+    extraSkipDirs?: string[]         // Additional dirs to skip (appended to skipDirs)
+  }
+  read?: {
+    maxFileSize?: number             // Max file size to read (bytes), default 1048576
+  }
+  write?: {
+    maxFileSize?: number             // Max content size to write (bytes), default Infinity
+  }
+  edit?: {
+    maxFileSize?: number             // Max file size to edit (bytes), default 10485760
+  }
 }
 ```
 
@@ -185,10 +236,23 @@ const sdk = new ClaudeSDK({
       maxFileSize: 1024 * 1024,  // 1MB
     },
   },
+  context: {
+    compressionTriggerRatio: 0.7,  // Compress earlier
+    compressionTargetRatio: 0.5,   // More aggressive compression
+  },
+  tools: {
+    bash: {
+      defaultTimeout: 60000,       // 1 minute default
+      outputTruncateLimit: 30000,  // Truncate at 30K chars
+    },
+    grep: {
+      extraSkipDirs: ['dist', 'coverage'],  // Skip additional dirs
+    },
+  },
 })
 ```
 
-When `security` is not configured, all tools operate without restrictions.
+When `security` / `context` / `tools` are not configured, all tools operate with sensible defaults.
 
 ### Connecting Different LLM Services
 
@@ -326,6 +390,7 @@ claude-code-minify/
 │   ├── index.ts              # SDK entry point
 │   ├── core/
 │   │   ├── types.ts          # Type definitions
+│   │   ├── defaults.ts       # Default configuration constants
 │   │   ├── engine.ts         # Conversation loop engine
 │   │   ├── context.ts        # Context window management
 │   │   ├── system-prompt.ts  # System prompt builder

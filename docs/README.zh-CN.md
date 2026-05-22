@@ -286,8 +286,88 @@ interface ClaudeSDKConfig {
   /** 工具安全策略配置 */
   security?: SecurityConfig
 
+  /** 上下文压缩策略配置 */
+  context?: ContextConfig
+
+  /** 工具行为配置 */
+  tools?: ToolsConfig
+
   /** 用户交互回调函数，用于处理 ask_user 工具的提问 */
   askUserCallback?: (question: string) => Promise<string>
+}
+```
+
+### 上下文压缩配置
+
+精细调整上下文窗口的压缩行为。
+
+```typescript
+interface ContextConfig {
+  /** 触发压缩的上下文使用率，默认 0.8（80%） */
+  compressionTriggerRatio?: number
+  /** 压缩后的目标上下文使用率，默认 0.6（60%） */
+  compressionTargetRatio?: number
+  /** 压缩时保留的最近对话轮数，默认 6 */
+  compressRecentRounds?: number
+  /** 工具结果超过此字符数时进行压缩，默认 500 */
+  toolResultCompressThreshold?: number
+}
+```
+
+### 工具行为配置
+
+自定义各工具的运行参数。所有字段均可选，有合理默认值。
+
+```typescript
+interface ToolsConfig {
+  /** bash 工具配置 */
+  bash?: {
+    /** 默认命令超时（毫秒），默认 120000 */
+    defaultTimeout?: number
+    /** 命令超时上限（毫秒），默认 600000 */
+    maxTimeout?: number
+    /** 输出缓冲区最大字节数，默认 10485760 (10MB) */
+    maxBuffer?: number
+    /** 输出截断阈值（字符数），默认 50000 */
+    outputTruncateLimit?: number
+  }
+  /** grep 工具配置 */
+  grep?: {
+    /** 命令超时（毫秒），默认 30000 */
+    timeout?: number
+    /** 最大列宽，默认 500 */
+    maxColumns?: number
+    /** 输出缓冲区最大字节数，默认 5242880 (5MB) */
+    maxBuffer?: number
+    /** 排除的目录名，默认 ['.git'] */
+    skipDirs?: string[]
+    /** 追加排除的目录名，与 skipDirs 合并 */
+    extraSkipDirs?: string[]
+  }
+  /** glob 工具配置 */
+  glob?: {
+    /** 最大返回结果数，默认 100 */
+    maxResults?: number
+    /** 跳过的目录名，默认 ['node_modules', '.git'] */
+    skipDirs?: string[]
+    /** 追加跳过的目录名，与 skipDirs 合并 */
+    extraSkipDirs?: string[]
+  }
+  /** file_read 工具配置 */
+  read?: {
+    /** 最大文件大小（字节），默认 1048576 (1MB) */
+    maxFileSize?: number
+  }
+  /** file_write 工具配置 */
+  write?: {
+    /** 最大写入内容大小（字节），默认 Infinity（不限制） */
+    maxFileSize?: number
+  }
+  /** file_edit 工具配置 */
+  edit?: {
+    /** 可编辑文件的最大大小（字节），默认 10485760 (10MB) */
+    maxFileSize?: number
+  }
 }
 ```
 
@@ -342,10 +422,23 @@ const sdk = new ClaudeSDK({
       maxFileSize: 1024 * 1024,              // 文件大小上限 1MB
     },
   },
+  context: {
+    compressionTriggerRatio: 0.7,            // 更早触发压缩
+    compressionTargetRatio: 0.5,             // 更激进地压缩
+  },
+  tools: {
+    bash: {
+      defaultTimeout: 60000,                 // 默认超时 1 分钟
+      outputTruncateLimit: 30000,            // 输出截断阈值 30K 字符
+    },
+    grep: {
+      extraSkipDirs: ['dist', 'coverage'],   // 追加跳过的目录
+    },
+  },
 })
 ```
 
-不配置 `security` 时，所有工具无任何限制，行为与原始代码一致。传空数组/`false` 即可关闭对应检查。
+不配置 `security`、`context`、`tools` 时，所有工具使用合理的默认值，行为与原始代码一致。
 
 ### 使用示例
 
@@ -667,6 +760,9 @@ interface ToolContext {
 
   /** 安全策略配置 */
   security?: SecurityConfig
+
+  /** 工具行为配置 */
+  tools?: ToolsConfig
 
   /** 进度回调（可选） */
   onProgress?: (msg: string) => void
@@ -1008,6 +1104,7 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。
 **行为规则：**
 - 自动递归创建所有父目录
 - 如果文件已存在则覆盖
+- 写入内容大小受 `security.file.maxFileSize` 和 `tools.write.maxFileSize` 双重限制
 - 写入成功后，文件路径会被记录到 `EngineResult.filesWritten`
 
 ---
@@ -1029,6 +1126,7 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。
 - `old_string` 必须在文件中存在
 - `replace_all` 为 `false` 时，`old_string` 必须在文件中唯一，否则报错
 - `old_string` 和 `new_string` 不能相同
+- 文件大小受 `security.file.maxFileSize` 和 `tools.edit.maxFileSize`（默认 10MB）双重限制
 - 替换完成后返回替换的次数
 
 ---
@@ -1048,10 +1146,9 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。
 **行为规则：**
 - 工作目录为 `workingDir`
 - 支持通过 `security.bash` 配置受保护端口、禁止访问的系统路径、目录跳转限制
+- 超时、缓冲区、截断阈值可通过 `tools.bash` 配置
 - 支持 `cd xxx && command` 形式的目录切换（可通过 `restrictToProjectDir` 限制）
 - 继承当前进程的环境变量 (`process.env`)
-- `maxBuffer`: 10 MB
-- 输出超过 50,000 字符时自动截断（保留前 25K 和后 25K）
 - 合并 stdout 和 stderr 输出
 - 非零退出码会被标记为错误
 
@@ -1074,9 +1171,8 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。
 
 **行为规则：**
 - 系统需安装 `rg`（ripgrep）
-- 默认搜索隐藏文件，排除 `.git` 目录
-- `--max-columns 500`（避免 base64 等长行干扰）
-- 超时 30 秒，`maxBuffer` 5 MB
+- 默认搜索隐藏文件，排除 `.git` 目录（可通过 `tools.grep.skipDirs` / `extraSkipDirs` 配置）
+- 列宽、超时、缓冲区可通过 `tools.grep` 配置
 - 输出路径相对于 `workingDir` 显示
 
 ---
@@ -1097,8 +1193,8 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。
 - `**` 匹配任意子目录
 - `*` 匹配不含路径分隔符的任意字符
 - `?` 匹配单个字符
-- 自动跳过 `node_modules` 和 `.git` 目录
-- 结果上限 100 个文件
+- 自动跳过 `node_modules` 和 `.git` 目录（可通过 `tools.glob.skipDirs` / `extraSkipDirs` 配置）
+- 结果上限可通过 `tools.glob.maxResults` 配置，默认 100
 
 ---
 
@@ -1276,14 +1372,16 @@ SDK 内置上下文窗口管理器（`ContextManager`），自动在消息过长
 
 ### 工作机制
 
-上下文窗口大小由 `contextWindow` 配置项控制，可用上下文 = `contextWindow - maxTokens`。
+上下文窗口大小由 `contextWindow` 配置项控制，可用上下文 = `contextWindow - maxTokens`。压缩行为可通过 `context` 配置项调整。
 
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| 默认上下文大小 | 200,000 tokens | 模拟的上下文窗口大小 |
-| 裁剪触发阈值 | 80% | 超过此值开始裁剪 |
-| 裁剪目标 | 60% | 裁剪到此比例 |
-| 最少保留 | 2 条消息 | 保证基本上下文 |
+| 参数 | 默认值 | 配置项 | 说明 |
+|------|--------|--------|------|
+| 上下文大小 | 200,000 tokens | `contextWindow` | 模拟的上下文窗口大小 |
+| 裁剪触发阈值 | 80% | `context.compressionTriggerRatio` | 超过此值开始裁剪 |
+| 裁剪目标 | 60% | `context.compressionTargetRatio` | 裁剪到此比例 |
+| 保留最近轮数 | 6 轮 | `context.compressRecentRounds` | 保护最近 N 轮不压缩 |
+| 工具结果压缩阈值 | 500 字符 | `context.toolResultCompressThreshold` | 超过此长度的结果被压缩 |
+| 最少保留 | 2 条消息 | — | 保证基本上下文 |
 
 ### 两阶段裁剪策略
 

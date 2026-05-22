@@ -1,12 +1,14 @@
 import {
   Message, ToolUseBlock, ToolResultBlock, EngineResult, EngineEvent,
   ToolContext, ToolResult, ChatParams, UsageInfo, SecurityConfig,
+  ContextConfig, ToolsConfig,
 } from './types.js'
 import { LLMProvider, estimateMessagesTokens, estimateToolDefsTokens, estimateSystemPromptTokens } from '../providers/base.js'
 import { ToolSpec, createToolDefinition } from '../tools/base.js'
 import { buildSystemPrompt, SystemPromptOptions } from './system-prompt.js'
 import { ContextManager } from './context.js'
 import { userMessage, toolResultMessage } from './message.js'
+import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from './defaults.js'
 
 export interface EngineOptions {
   provider: LLMProvider
@@ -17,6 +19,8 @@ export interface EngineOptions {
   maxToolRounds: number
   workingDir: string
   security?: SecurityConfig
+  contextConfig?: ContextConfig
+  toolsConfig?: ToolsConfig
   systemPromptOptions: SystemPromptOptions
   abortSignal?: AbortSignal
   onText?: (text: string) => void
@@ -32,8 +36,11 @@ export class Engine {
   private maxToolRounds: number
   private workingDir: string
   private security?: SecurityConfig
+  private contextConfig?: ContextConfig
+  private toolsConfig?: ToolsConfig
   private systemPromptOptions: SystemPromptOptions
   private context: ContextManager
+  private sessionId: string
   private abortSignal?: AbortSignal
   private onText?: (text: string) => void
   private onToolStart?: (name: string, params: any) => void
@@ -47,8 +54,14 @@ export class Engine {
     this.maxToolRounds = options.maxToolRounds
     this.workingDir = options.workingDir
     this.security = options.security
+    this.contextConfig = options.contextConfig
+    this.toolsConfig = options.toolsConfig
     this.systemPromptOptions = options.systemPromptOptions
-    this.context = new ContextManager((options.contextWindow || 200000) - (options.maxTokens || 4096))
+    this.context = new ContextManager(
+      (options.contextWindow || DEFAULT_CONTEXT_WINDOW) - (options.maxTokens || DEFAULT_MAX_TOKENS),
+      options.contextConfig,
+    )
+    this.sessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     this.abortSignal = options.abortSignal
     this.onText = options.onText
     this.onToolStart = options.onToolStart
@@ -161,7 +174,7 @@ export class Engine {
         this.onToolStart?.(tu.name, tu.input)
         yield { type: 'tool_start', name: tu.name, params: tu.input }
 
-        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: 'session', security: this.security }
+        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: this.sessionId, security: this.security, tools: this.toolsConfig }
         let result: ToolResult
         try {
           result = await tool.execute(tu.input, toolCtx)

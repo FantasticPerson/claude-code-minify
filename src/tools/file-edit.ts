@@ -3,6 +3,7 @@ import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { checkFileSecurity } from './security.js'
+import { DEFAULT_EDIT_MAX_FILE_SIZE } from '../core/defaults.js'
 
 export const fileEditTool: ToolSpec = {
   name: 'file_edit',
@@ -19,6 +20,11 @@ export const fileEditTool: ToolSpec = {
     if (secErr) return { output: secErr, isError: true }
     if (params.old_string === params.new_string) return { output: 'Error: old_string and new_string are identical', isError: true }
     try {
+      const stat = await fs.stat(filePath)
+      const secLimit = ctx.security?.file?.maxFileSize ?? Infinity
+      const toolLimit = ctx.tools?.edit?.maxFileSize ?? DEFAULT_EDIT_MAX_FILE_SIZE
+      const maxFileSize = Math.min(secLimit, toolLimit)
+      if (stat.size > maxFileSize) return { output: `Error: File too large to edit (${Math.round(stat.size / 1024)}KB). Limit: ${Math.round(maxFileSize / 1024)}KB.`, isError: true }
       const content = await fs.readFile(filePath, 'utf-8')
       if (!content.includes(params.old_string)) return { output: `Error: old_string not found in ${filePath}`, isError: true }
       if (!params.replace_all) {

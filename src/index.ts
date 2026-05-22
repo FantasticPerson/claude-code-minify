@@ -3,6 +3,7 @@ export type {
   ClaudeSDKConfig, Message, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock,
   EngineResult, EngineEvent, ToolResult, ToolContext, ToolRegistration, Skill, Memory,
   MemoryType, UsageInfo, StreamEvent, ChatParams, ChatResponse, ToolDefinition,
+  ContextConfig, ToolsConfig, ToolBashConfig, ToolGrepConfig, ToolGlobConfig, ToolReadConfig, ToolWriteConfig, ToolEditConfig,
 } from './core/types.js'
 
 // SDK
@@ -14,6 +15,7 @@ import { Engine } from './core/engine.js'
 import { createBuiltinTools, ToolSpec, registerTool } from './tools/index.js'
 import { getAllSkills } from './skills/index.js'
 import { loadClaudeMD } from './config/claude-md.js'
+import { DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOOL_ROUNDS, DEFAULT_AUTO_LOAD_CLAUDE_MD } from './core/defaults.js'
 
 export class ClaudeSDK {
   private config: Required<Pick<ClaudeSDKConfig, 'provider' | 'apiKey' | 'model' | 'workingDir' | 'maxTokens' | 'maxToolRounds' | 'autoLoadClaudeMD'>> & Omit<ClaudeSDKConfig, 'provider' | 'apiKey' | 'model' | 'workingDir' | 'maxTokens' | 'maxToolRounds' | 'autoLoadClaudeMD'>
@@ -24,9 +26,9 @@ export class ClaudeSDK {
   constructor(config: ClaudeSDKConfig) {
     this.config = {
       ...config,
-      maxTokens: config.maxTokens ?? 4096,
-      maxToolRounds: config.maxToolRounds ?? 50,
-      autoLoadClaudeMD: config.autoLoadClaudeMD ?? true,
+      maxTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
+      maxToolRounds: config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS,
+      autoLoadClaudeMD: config.autoLoadClaudeMD ?? DEFAULT_AUTO_LOAD_CLAUDE_MD,
     }
 
     if (config.provider === 'openai') {
@@ -102,6 +104,8 @@ export class ClaudeSDK {
       maxToolRounds: this.config.maxToolRounds,
       workingDir: this.config.workingDir,
       security: this.config.security,
+      contextConfig: this.config.context,
+      toolsConfig: this.config.tools,
       systemPromptOptions: {
         workingDir: this.config.workingDir,
         customInstructions: this.config.instructions,
@@ -132,3 +136,4 @@ export class Session {
 export { OpenAIProvider } from './providers/openai.js'
 export { AnthropicProvider } from './providers/anthropic.js'
 export { MemoryManager } from './memory/manager.js'
+export * as Defaults from './core/defaults.js'

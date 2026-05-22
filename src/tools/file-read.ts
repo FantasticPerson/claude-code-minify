@@ -3,6 +3,7 @@ import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { checkFileSecurity } from './security.js'
+import { DEFAULT_READ_MAX_FILE_SIZE } from '../core/defaults.js'
 
 export const fileReadTool: ToolSpec = {
   name: 'file_read',
@@ -19,7 +20,9 @@ export const fileReadTool: ToolSpec = {
     try {
       const stat = await fs.stat(filePath)
       if (stat.isDirectory()) return { output: `Error: ${filePath} is a directory, not a file`, isError: true }
-      const maxFileSize = ctx.security?.file?.maxFileSize ?? 1024 * 1024
+      const secLimit = ctx.security?.file?.maxFileSize ?? Infinity
+      const toolLimit = ctx.tools?.read?.maxFileSize ?? DEFAULT_READ_MAX_FILE_SIZE
+      const maxFileSize = Math.min(secLimit, toolLimit)
       if (stat.size > maxFileSize) return { output: `Error: File too large (${Math.round(stat.size / 1024)}KB). Use offset/limit to read portions.`, isError: true }
       const content = await fs.readFile(filePath, 'utf-8')
       const lines = content.split('\n')

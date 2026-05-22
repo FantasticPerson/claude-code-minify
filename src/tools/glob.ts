@@ -3,6 +3,7 @@ import { ToolSpec } from './base.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { checkFileSecurity } from './security.js'
+import { DEFAULT_GLOB_MAX_RESULTS, DEFAULT_GLOB_SKIP_DIRS } from '../core/defaults.js'
 
 function matchGlob(pattern: string, filename: string): boolean {
   // Convert simple glob patterns to regex
@@ -15,7 +16,7 @@ function matchGlob(pattern: string, filename: string): boolean {
   return new RegExp(`^${regexStr}$`).test(filename)
 }
 
-async function walkDir(dir: string, pattern: string, results: string[], limit: number, prefix: string = ''): Promise<void> {
+async function walkDir(dir: string, pattern: string, results: string[], limit: number, skipDirs: string[], prefix: string = ''): Promise<void> {
   if (results.length >= limit) return
   let entries
   try {
@@ -27,9 +28,8 @@ async function walkDir(dir: string, pattern: string, results: string[], limit: n
     if (results.length >= limit) return
     const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
     if (entry.isDirectory()) {
-      // Skip node_modules and .git
-      if (entry.name === 'node_modules' || entry.name === '.git') continue
-      await walkDir(path.join(dir, entry.name), pattern, results, limit, relPath)
+      if (skipDirs.includes(entry.name)) continue
+      await walkDir(path.join(dir, entry.name), pattern, results, limit, skipDirs, relPath)
     } else if (entry.isFile()) {
       if (matchGlob(pattern, relPath)) {
         results.push(relPath)
@@ -50,9 +50,12 @@ export const globTool: ToolSpec = {
     const secErr = checkFileSecurity(searchPath, ctx.workingDir, ctx.security?.file)
     if (secErr) return { output: secErr, isError: true }
     try {
-      const limit = 100
+      const limit = ctx.tools?.glob?.maxResults ?? DEFAULT_GLOB_MAX_RESULTS
+      const baseSkipDirs = ctx.tools?.glob?.skipDirs ?? DEFAULT_GLOB_SKIP_DIRS
+      const extraSkipDirs = ctx.tools?.glob?.extraSkipDirs ?? []
+      const skipDirs = [...baseSkipDirs, ...extraSkipDirs]
       const files: string[] = []
-      await walkDir(searchPath, params.pattern, files, limit)
+      await walkDir(searchPath, params.pattern, files, limit, skipDirs)
       const truncated = files.length >= limit
       return {
         output: files.length > 0
