@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker, ResponseValidator, ValidationResult } from '../src/guardrails/index.js'
+import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker, ResponseValidator, ValidationResult, GuardrailsMiddleware, CheckAction, GuardrailsConfig } from '../src/guardrails/index.js'
 
 describe('Nudge', () => {
   it('constructs with correct properties', () => {
@@ -176,5 +176,80 @@ describe('ResponseValidator', () => {
     const rawContent = '```json\n[{"name":"read","input":{"file_path":"/a"}}]\n```'
     const result = v.validate(null, rawContent)
     expect(result.needsRetry).toBe(true)
+  })
+})
+
+describe('GuardrailsMiddleware', () => {
+  // --- Normal flow ---
+
+  it('valid tool call returns action=execute with toolCalls', () => {
+    const mw = new GuardrailsMiddleware(['read', 'write'])
+    const toolCalls = [{ type: 'tool_use' as const, id: '1', name: 'read', input: { file_path: '/a' } }]
+    const result = mw.check(toolCalls)
+    expect(result.action).toBe('execute')
+    expect(result.toolCalls).toEqual(toolCalls)
+    expect(result.nudge).toBeUndefined()
+    expect(result.reason).toBeUndefined()
+  })
+
+  it('recordSuccess does not throw after valid tool call', () => {
+    const mw = new GuardrailsMiddleware(['read', 'write'])
+    const toolCalls = [{ type: 'tool_use' as const, id: '1', name: 'read', input: { file_path: '/a' } }]
+    mw.check(toolCalls)
+    expect(() => mw.recordSuccess()).not.toThrow()
+  })
+
+  // --- Retry flow ---
+
+  it('unknown tool returns action=tool_error with nudge', () => {
+    const mw = new GuardrailsMiddleware(['read'])
+    const toolCalls = [{ type: 'tool_use' as const, id: '1', name: 'hack', input: {} }]
+    const result = mw.check(toolCalls)
+    expect(result.action).toBe('tool_error')
+    expect(result.nudge).toBeDefined()
+    expect(result.nudge!.kind).toBe(NudgeKind.UnknownTool)
+  })
+
+  // --- Budget exhausted ---
+
+  it('exhausts retries after maxRetries empty toolCalls and returns fatal', () => {
+    const mw = new GuardrailsMiddleware(['read', 'write'], { maxRetries: 2 })
+    // Retry 1
+    let result = mw.check([])
+    expect(result.action).toBe('retry')
+    // Retry 2
+    result = mw.check([])
+    expect(result.action).toBe('retry')
+    // Retry 3 — exhausted
+    result = mw.check([])
+    expect(result.action).toBe('fatal')
+    expect(result.reason).toContain('retries')
+  })
+
+  it('recordSuccess resets tool error count so maxToolErrors is not exceeded', () => {
+    const mw = new GuardrailsMiddleware(['read'], { maxToolErrors: 1 })
+    const unknownTool = [{ type: 'tool_use' as const, id: '1', name: 'hack', input: {} }]
+    // First unknown tool → tool_error
+    let result = mw.check(unknownTool)
+    expect(result.action).toBe('tool_error')
+    // recordSuccess resets counters
+    mw.recordSuccess()
+    // Second unknown tool → tool_error (not fatal, because reset cleared the count)
+    result = mw.check(unknownTool)
+    expect(result.action).toBe('tool_error')
+  })
+
+  // --- recordSuccess reset ---
+
+  it('recordSuccess resets retry count allowing more retries', () => {
+    const mw = new GuardrailsMiddleware(['read'], { maxRetries: 2 })
+    // Retry 1
+    let result = mw.check([])
+    expect(result.action).toBe('retry')
+    // recordSuccess resets
+    mw.recordSuccess()
+    // Retry 1 again (not exhausted because reset cleared the count)
+    result = mw.check([])
+    expect(result.action).toBe('retry')
   })
 })
