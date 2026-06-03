@@ -1,12 +1,13 @@
 import {
   Message, ToolUseBlock, ToolResultBlock, EngineResult, EngineEvent,
   ToolContext, ToolResult, ChatParams, UsageInfo, SecurityConfig,
-  ContextConfig, ToolsConfig,
+  ContextConfig, ToolsConfig, GuardrailsConfig,
 } from './types.js'
 import { LLMProvider, estimateMessagesTokens, estimateToolDefsTokens, estimateSystemPromptTokens } from '../providers/base.js'
 import { ToolSpec, createToolDefinition } from '../tools/base.js'
 import { buildSystemPrompt, SystemPromptOptions } from './system-prompt.js'
 import { ContextManager } from '../context/manager.js'
+import { GuardrailsMiddleware } from '../guardrails/middleware.js'
 import { userMessage, toolResultMessage } from './message.js'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from './defaults.js'
 
@@ -21,6 +22,7 @@ export interface EngineOptions {
   security?: SecurityConfig
   contextConfig?: ContextConfig
   toolsConfig?: ToolsConfig
+  guardrailsConfig?: GuardrailsConfig
   systemPromptOptions: SystemPromptOptions
   abortSignal?: AbortSignal
   onText?: (text: string) => void
@@ -40,6 +42,7 @@ export class Engine {
   private toolsConfig?: ToolsConfig
   private systemPromptOptions: SystemPromptOptions
   private context: ContextManager
+  private guardrails: GuardrailsMiddleware | null
   private sessionId: string
   private abortSignal?: AbortSignal
   private onText?: (text: string) => void
@@ -61,6 +64,9 @@ export class Engine {
       (options.contextWindow || DEFAULT_CONTEXT_WINDOW) - (options.maxTokens || DEFAULT_MAX_TOKENS),
       options.contextConfig,
     )
+    this.guardrails = options.guardrailsConfig
+      ? new GuardrailsMiddleware(Array.from(this.tools.keys()), options.guardrailsConfig)
+      : null
     this.sessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     this.abortSignal = options.abortSignal
     this.onText = options.onText
@@ -147,6 +153,32 @@ export class Engine {
 
       // Use real token usage to decide compression — much more accurate than estimation
       this.context.compressIfNeeded(usage.inputTokens)
+
+      // Guardrails: validate tool calls before execution
+      if (this.guardrails && toolUses.length > 0) {
+        const checkResult = this.guardrails.check(toolUses, responseText || undefined)
+
+        if (checkResult.action === 'fatal') {
+          yield { type: 'error', error: new Error(`Guardrails exhausted: ${checkResult.reason}`) }
+          return
+        }
+
+        if (checkResult.action === 'retry' || checkResult.action === 'tool_error') {
+          // Append nudge message to context so the model sees the error and retries
+          const nudgeMsg = checkResult.nudge!.role === 'tool'
+            ? { role: 'user' as const, content: [{ type: 'tool_result' as const, toolUseId: 'guardrails-nudge', content: checkResult.nudge!.content, isError: true }] }
+            : { role: 'user' as const, content: [{ type: 'text' as const, text: checkResult.nudge!.content }] }
+          this.context.add(nudgeMsg)
+          continue
+        }
+
+        // action === 'execute': use possibly rescue-corrected toolCalls
+        if (checkResult.toolCalls) {
+          toolUses.length = 0
+          toolUses.push(...checkResult.toolCalls)
+        }
+        this.guardrails.recordSuccess()
+      }
 
       if (toolUses.length === 0) {
         totalText += responseText

@@ -1,5 +1,35 @@
 import { describe, it, expect } from 'vitest'
 import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker, ResponseValidator, ValidationResult, GuardrailsMiddleware, CheckAction, GuardrailsConfig } from '../src/guardrails/index.js'
+import { Engine } from '../src/core/engine.js'
+import { LLMProvider, StreamEvent } from '../src/providers/base.js'
+import { ToolSpec } from '../src/tools/base.js'
+import { z } from 'zod'
+
+function createMockProvider(responses: StreamEvent[][]): LLMProvider & { getCallCount: () => number } {
+  let callIndex = 0
+  return {
+    getCallCount() { return callIndex },
+    async *chatStream(params: any): AsyncGenerator<StreamEvent> {
+      const events = responses[callIndex++] || []
+      for (const event of events) {
+        yield event
+      }
+    },
+    async chat(params: any) {
+      return { text: '', toolUses: [], usage: { inputTokens: 0, outputTokens: 0 }, stopReason: 'end_turn' }
+    },
+    async countTokens(messages: any[]) { return Math.ceil(JSON.stringify(messages).length / 4) },
+  }
+}
+
+function createMockTool(name: string): ToolSpec {
+  return {
+    name,
+    description: `Mock tool ${name}`,
+    schema: z.object({}),
+    execute: async (params: any) => ({ output: `executed ${name}`, isError: false }),
+  }
+}
 
 describe('Nudge', () => {
   it('constructs with correct properties', () => {
@@ -251,5 +281,87 @@ describe('GuardrailsMiddleware', () => {
     // Retry 1 again (not exhausted because reset cleared the count)
     result = mw.check([])
     expect(result.action).toBe('retry')
+  })
+})
+
+// ============================================================================
+// Engine Guardrails Integration
+// ============================================================================
+
+describe('Engine Guardrails Integration', () => {
+  it('Engine constructs with guardrailsConfig without error', () => {
+    const provider = createMockProvider([[]])
+    const tools = new Map<string, ToolSpec>([['bash', createMockTool('bash')]])
+    expect(() => new Engine({
+      provider,
+      tools,
+      model: 'test',
+      maxTokens: 1024,
+      maxToolRounds: 5,
+      workingDir: '/tmp',
+      systemPromptOptions: { workingDir: '/tmp', enabledTools: ['bash'] },
+      guardrailsConfig: { maxRetries: 2 },
+    })).not.toThrow()
+  })
+
+  it('Engine constructs without guardrailsConfig (guardrails is null, skipped)', () => {
+    const provider = createMockProvider([[]])
+    const tools = new Map<string, ToolSpec>([['bash', createMockTool('bash')]])
+    expect(() => new Engine({
+      provider,
+      tools,
+      model: 'test',
+      maxTokens: 1024,
+      maxToolRounds: 5,
+      workingDir: '/tmp',
+      systemPromptOptions: { workingDir: '/tmp', enabledTools: ['bash'] },
+    })).not.toThrow()
+  })
+
+  it('unknown tool name triggers guardrails nudge and provider is called twice', async () => {
+    // Call 1: provider returns an unknown tool call
+    const call1Events: StreamEvent[] = [
+      { type: 'tool_use_end', id: 'tu_1', name: 'nonexistent_tool', input: {} },
+      { type: 'message_end', usage: { inputTokens: 100, outputTokens: 50 }, stopReason: 'tool_use' },
+    ]
+    // Call 2: provider returns a valid response (text only, no tools)
+    const call2Events: StreamEvent[] = [
+      { type: 'text_delta', text: 'fixed response' },
+      { type: 'message_end', usage: { inputTokens: 200, outputTokens: 50 }, stopReason: 'end_turn' },
+    ]
+
+    const provider = createMockProvider([call1Events, call2Events])
+    const tools = new Map<string, ToolSpec>([['bash', createMockTool('bash')]])
+
+    const engine = new Engine({
+      provider,
+      tools,
+      model: 'test',
+      maxTokens: 1024,
+      maxToolRounds: 10,
+      workingDir: '/tmp',
+      systemPromptOptions: { workingDir: '/tmp', enabledTools: ['bash'] },
+      guardrailsConfig: { maxRetries: 3 },
+    })
+
+    const events: any[] = []
+    for await (const event of engine.runStream('hello')) {
+      events.push(event)
+    }
+
+    // Provider should have been called twice: first with unknown tool, then after nudge retry
+    expect(provider.getCallCount()).toBe(2)
+
+    // No tool_start/tool_end events for the unknown tool (guardrails intercepted it)
+    const toolStartEvents = events.filter(e => e.type === 'tool_start')
+    expect(toolStartEvents.length).toBe(0)
+
+    // Final result should contain the text from the second call
+    const completeEvent = events.find(e => e.type === 'complete')
+    expect(completeEvent).toBeDefined()
+    expect(completeEvent.result.text).toBe('fixed response')
+
+    // No tool calls in result (unknown tool was never executed)
+    expect(completeEvent.result.toolCalls.length).toBe(0)
   })
 })

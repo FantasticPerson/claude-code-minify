@@ -231,6 +231,14 @@ export interface Skill {
   triggerPatterns: string[]
 }
 
+// ============ Guardrails ============
+
+export interface GuardrailsConfig {
+  maxRetries?: number;       // default 3
+  maxToolErrors?: number;    // default 2
+  rescueEnabled?: boolean;   // default true
+}
+
 // ============ Config ============
 
 export interface ClaudeSDKConfig {
