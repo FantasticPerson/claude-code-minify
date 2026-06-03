@@ -7,13 +7,17 @@ export interface SystemPromptOptions {
   customInstructions?: string
   skills?: Skill[]
   activeSkill?: Skill
+  /** 运行模式：'coding'（默认）或 'general' */
+  mode?: 'coding' | 'general'
+  /** 实际注册的工具名称列表，用于动态生成 Available tools 段 */
+  enabledTools?: string[]
 }
 
 export async function buildSystemPrompt(options: SystemPromptOptions): Promise<string> {
   const parts: string[] = []
 
   // 1. Core system prompt
-  parts.push(getCorePrompt())
+  parts.push(getCorePrompt(options.mode ?? 'coding', options.enabledTools ?? []))
 
   // 2. CLAUDE.md content
   const claudeMD = await loadClaudeMD({
@@ -44,7 +48,19 @@ export async function buildSystemPrompt(options: SystemPromptOptions): Promise<s
   return parts.join('\n\n---\n\n')
 }
 
-function getCorePrompt(): string {
+function getCorePrompt(mode: string, enabledTools: string[]): string {
+  const toolList = enabledTools
+    .map(name => TOOL_DESCRIPTIONS[name])
+    .filter(Boolean)
+    .join('\n')
+
+  const toolSection = toolList ? `\n\nAvailable tools:\n${toolList}` : ''
+
+  if (mode === 'general') {
+    return `You are a helpful AI assistant. You can answer questions, analyze information, and assist with various tasks.${toolSection}`
+  }
+
+  // coding 模式（默认）
   return `You are an expert software development assistant. You have access to tools for reading, writing, and editing files, executing commands, and searching code.
 
 Key guidelines:
@@ -53,17 +69,18 @@ Key guidelines:
 - Use the bash tool for running commands (npm install, build, test, etc.)
 - Write production-quality code with proper error handling
 - Follow existing code patterns and conventions in the project
-- When generating a full project, create all necessary files including config files
+- When generating a full project, create all necessary files including config files${toolSection}`
+}
 
-Available tools:
-- file_read: Read file contents
-- file_write: Write/create files
-- file_edit: Make precise string replacements in files
-- bash: Execute shell commands
-- grep: Search file contents
-- glob: Find files by pattern
-- todo_write: Track task progress
-- ask_user: Ask the user questions`
+const TOOL_DESCRIPTIONS: Record<string, string> = {
+  file_read: '- file_read: Read file contents',
+  file_write: '- file_write: Write/create files',
+  file_edit: '- file_edit: Make precise string replacements in files',
+  bash: '- bash: Execute shell commands',
+  grep: '- grep: Search file contents',
+  glob: '- glob: Find files by pattern',
+  todo_write: '- todo_write: Track task progress',
+  ask_user: '- ask_user: Ask the user questions',
 }
 
 function getEnvironmentSection(workingDir: string): string {

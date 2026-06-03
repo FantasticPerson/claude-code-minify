@@ -132,6 +132,7 @@ interface ClaudeSDKConfig {
   model: string                      // Required
   workingDir: string                 // Required
   baseURL?: string                   // For compatible APIs
+  mode?: 'coding' | 'general'       // Default: 'coding'
   maxTokens?: number                 // Default: 4096
   contextWindow?: number             // Default: 200000
   maxToolRounds?: number             // Default: 50
@@ -163,6 +164,7 @@ Customize individual tool behavior. All fields are optional with sensible defaul
 
 ```typescript
 interface ToolsConfig {
+  disabled?: string[]               // Disable builtin tools, e.g. ['bash', 'file_edit']
   bash?: {
     defaultTimeout?: number          // Default command timeout (ms), default 120000
     maxTimeout?: number              // Maximum allowed timeout (ms), default 600000
@@ -192,6 +194,41 @@ interface ToolsConfig {
   }
 }
 ```
+
+### Mode & Tool Filtering
+
+The `mode` option switches between built-in prompt presets, and `tools.disabled` allows fine-grained tool control.
+
+**`mode: 'coding'`** (default) — Full development assistant prompt with all 8 tools.
+
+**`mode: 'general'`** — Generic conversation prompt. Automatically keeps only `file_read` and `ask_user` tools.
+
+```typescript
+// General mode — Q&A, knowledge, content generation
+const sdk = new ClaudeSDK({
+  provider: 'openai',
+  apiKey: 'sk-xxx',
+  model: 'gpt-4o',
+  workingDir: '.',
+  mode: 'general',
+})
+```
+
+**`tools.disabled`** — Blacklist specific tools (works in any mode):
+
+```typescript
+const sdk = new ClaudeSDK({
+  provider: 'anthropic',
+  apiKey: 'sk-ant-xxx',
+  model: 'claude-sonnet-4-6',
+  workingDir: '.',
+  tools: {
+    disabled: ['bash', 'file_edit'],  // Disable dangerous tools
+  },
+})
+```
+
+When both `mode: 'general'` and `tools.disabled` are set, `tools.disabled` takes precedence.
 
 ### Security Configuration
 
@@ -326,6 +363,10 @@ sdk.registerTool({
 ```
 
 ## Built-in Tools
+
+## Built-in Tools
+
+> In `general` mode, only `file_read` and `ask_user` are registered. In `coding` mode (default), all 8 tools are available. Use `tools.disabled` to customize.
 
 | Tool | Purpose | Key Params | Security Config |
 |------|---------|------------|----------------|

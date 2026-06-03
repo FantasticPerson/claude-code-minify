@@ -155,6 +155,8 @@ export interface ToolEditConfig {
 }
 
 export interface ToolsConfig {
+  /** 禁用的内置工具名称列表，如 ['bash', 'file_edit'] */
+  disabled?: string[]
   bash?: ToolBashConfig
   grep?: ToolGrepConfig
   glob?: ToolGlobConfig
@@ -237,6 +239,8 @@ export interface ClaudeSDKConfig {
   apiKey: string
   model: string
   workingDir: string
+  /** 运行模式：'coding' 开发助手（默认），'general' 通用对话 */
+  mode?: 'coding' | 'general'
   maxTokens?: number
   contextWindow?: number
   maxToolRounds?: number

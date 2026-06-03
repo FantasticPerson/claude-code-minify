@@ -102,6 +102,7 @@
 - [快速开始](#快速开始)
 - [模块格式支持](#模块格式支持)
 - [配置项](#配置项)
+  - [运行模式与工具过滤](#运行模式与工具过滤)
 - [核心 API](#核心-api)
   - [ClaudeSDK 类](#claudesdk-类)
   - [Session 类](#session-类)
@@ -265,6 +266,9 @@ interface ClaudeSDKConfig {
   /** API 基础 URL，可选。用于兼容 API 的第三方服务 */
   baseURL?: string
 
+  /** 运行模式：'coding' 开发助手（默认），'general' 通用对话 */
+  mode?: 'coding' | 'general'
+
   /** 最大输出 token 数，默认 4096 */
   maxTokens?: number
 
@@ -320,6 +324,8 @@ interface ContextConfig {
 
 ```typescript
 interface ToolsConfig {
+  /** 禁用的内置工具名称列表，如 ['bash', 'file_edit'] */
+  disabled?: string[]
   /** bash 工具配置 */
   bash?: {
     /** 默认命令超时（毫秒），默认 120000 */
@@ -370,6 +376,41 @@ interface ToolsConfig {
   }
 }
 ```
+
+### 运行模式与工具过滤
+
+`mode` 选项切换内置的系统提示词预设，`tools.disabled` 允许精细控制工具注册。
+
+**`mode: 'coding'`**（默认）— 完整的软件开发助手提示词，注册全部 8 个工具。
+
+**`mode: 'general'`** — 通用对话提示词。自动只保留 `file_read` 和 `ask_user` 两个工具。
+
+```typescript
+// 通用模式 — 问答、知识咨询、内容生成
+const sdk = new ClaudeSDK({
+  provider: 'openai',
+  apiKey: 'sk-xxx',
+  model: 'gpt-4o',
+  workingDir: '.',
+  mode: 'general',
+})
+```
+
+**`tools.disabled`** — 黑名单禁用指定工具（任何模式下都可用）：
+
+```typescript
+const sdk = new ClaudeSDK({
+  provider: 'anthropic',
+  apiKey: 'sk-ant-xxx',
+  model: 'claude-sonnet-4-6',
+  workingDir: '.',
+  tools: {
+    disabled: ['bash', 'file_edit'],  // 禁用危险工具
+  },
+})
+```
+
+当同时设置 `mode: 'general'` 和 `tools.disabled` 时，`tools.disabled` 优先。
 
 ### 安全策略配置
 
@@ -1056,7 +1097,7 @@ CLAUDE.md 是项目级的 AI 指令文件，SDK 会按优先级自动加载并�
 
 ## 内置工具
 
-SDK 内置 8 个工具，AI 在对话过程中自动调用。
+SDK 内置 8 个工具，AI 在对话过程中自动调用。`general` 模式下只注册 `file_read` 和 `ask_user`；`coding` 模式（默认）注册全部 8 个工具。可通过 `tools.disabled` 自定义。
 
 ### file_read - 读取文件
 
@@ -1344,7 +1385,7 @@ class MyCustomProvider implements LLMProvider {
 
 | 部分 | 内容 | 来源 |
 |------|------|------|
-| **核心提示词** | AI 角色定义（软件开发专家）、行为准则、可用工具列表 | 内置硬编码 |
+| **核心提示词** | AI 角色定义、行为准则、可用工具列表（根据 `mode` 和实际注册的工具动态生成） | 根据 `mode` 配置选择预设 |
 | **项目指令** | CLAUDE.md 加载的指令内容 | `loadClaudeMD()` |
 | **记忆** | 历史记忆内容 | `MemoryManager.loadAllAsText()` |
 | **活跃技能** | 当前激活的技能内容 | `sdk.invokeSkill()` |

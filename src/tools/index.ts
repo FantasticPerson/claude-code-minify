@@ -10,16 +10,17 @@ import { askUserTool } from './ask-user.js'
 
 export type { ToolSpec } from './base.js'
 
-export function createBuiltinTools(): Map<string, ToolSpec> {
+export function createBuiltinTools(disabled: string[] = []): Map<string, ToolSpec> {
+  const allTools = [
+    fileReadTool, fileWriteTool, fileEditTool, bashTool,
+    grepTool, globTool, todoWriteTool, askUserTool,
+  ]
   const tools = new Map<string, ToolSpec>()
-  registerTool(tools, fileReadTool)
-  registerTool(tools, fileWriteTool)
-  registerTool(tools, fileEditTool)
-  registerTool(tools, bashTool)
-  registerTool(tools, grepTool)
-  registerTool(tools, globTool)
-  registerTool(tools, todoWriteTool)
-  registerTool(tools, askUserTool)
+  for (const tool of allTools) {
+    if (!disabled.includes(tool.name)) {
+      registerTool(tools, tool)
+    }
+  }
   return tools
 }
 

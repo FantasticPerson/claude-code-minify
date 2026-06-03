@@ -37,7 +37,14 @@ export class ClaudeSDK {
       this.provider = new AnthropicProvider(config.apiKey, config.baseURL)
     }
 
-    this.tools = createBuiltinTools()
+    // general 模式默认只保留 file_read 和 ask_user
+    const isGeneralMode = this.config.mode === 'general'
+    const disabled = this.config.tools?.disabled ?? (
+      isGeneralMode
+        ? ['file_write', 'file_edit', 'bash', 'grep', 'glob', 'todo_write']
+        : []
+    )
+    this.tools = createBuiltinTools(disabled)
   }
 
   /** Single-shot chat */
@@ -95,6 +102,7 @@ export class ClaudeSDK {
   }
 
   private createEngine(): Engine {
+    const enabledTools = Array.from(this.tools.keys())
     return new Engine({
       provider: this.provider,
       tools: this.tools,
@@ -110,6 +118,8 @@ export class ClaudeSDK {
         workingDir: this.config.workingDir,
         customInstructions: this.config.instructions,
         activeSkill: this.activeSkill,
+        mode: this.config.mode,
+        enabledTools,
       },
     })
   }
