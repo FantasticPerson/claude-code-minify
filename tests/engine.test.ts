@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { Engine, EngineOptions } from '../src/core/engine.js'
 import { createBuiltinTools } from '../src/tools/index.js'
 import { MockProvider, MockResponse } from './helpers/mock-provider.js'

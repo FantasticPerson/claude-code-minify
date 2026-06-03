@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { EvalRunner, EvalMockProvider, scenarioToToolMap } from '../src/eval/runner.js'
 import { scenarios } from '../src/eval/scenarios.js'
-import { EvalScenario, EvalToolDef, EvalRunResult, ScenarioMetrics, EvalConfig } from '../src/eval/types.js'
+import { EvalScenario, EvalToolDef, EvalConfig } from '../src/eval/types.js'
 
 // ============================================================================
 // 1. Types smoke tests
@@ -159,7 +159,7 @@ describe('EvalMockProvider', () => {
 
     const chatParams = {
       model: 'test',
-      system: [{ type: 'text', text: 'system' }],
+      system: [{ type: 'text' as const, text: 'system' }],
       messages: [],
       tools: [],
       maxTokens: 1024,
@@ -177,7 +177,7 @@ describe('EvalMockProvider', () => {
 
     const chatParams = {
       model: 'test',
-      system: [{ type: 'text', text: 'system' }],
+      system: [{ type: 'text' as const, text: 'system' }],
       messages: [],
       tools: [],
       maxTokens: 1024,
@@ -194,7 +194,7 @@ describe('EvalMockProvider', () => {
 
     const chatParams = {
       model: 'test',
-      system: [{ type: 'text', text: 'system' }],
+      system: [{ type: 'text' as const, text: 'system' }],
       messages: [],
       tools: [],
       maxTokens: 1024,
@@ -222,7 +222,7 @@ describe('EvalMockProvider', () => {
 
     const chatParams = {
       model: 'test',
-      system: [{ type: 'text', text: 'system' }],
+      system: [{ type: 'text' as const, text: 'system' }],
       messages: [],
       tools: [],
       maxTokens: 1024,

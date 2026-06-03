@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { buildSystemPrompt, SystemPromptOptions } from '../src/core/system-prompt.js'
+import { buildSystemPrompt } from '../src/core/system-prompt.js'
 import { Skill } from '../src/core/types.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'

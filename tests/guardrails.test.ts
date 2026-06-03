@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker, ResponseValidator, ValidationResult, GuardrailsMiddleware, CheckAction, GuardrailsConfig } from '../src/guardrails/index.js'
+import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker, ResponseValidator, GuardrailsMiddleware } from '../src/guardrails/index.js'
 import { Engine } from '../src/core/engine.js'
-import { LLMProvider, StreamEvent } from '../src/providers/base.js'
+import { LLMProvider } from '../src/providers/base.js'
+import { StreamEvent } from '../src/core/types.js'
 import { ToolSpec } from '../src/tools/base.js'
 import { z } from 'zod'
 
@@ -9,13 +10,13 @@ function createMockProvider(responses: StreamEvent[][]): LLMProvider & { getCall
   let callIndex = 0
   return {
     getCallCount() { return callIndex },
-    async *chatStream(params: any): AsyncGenerator<StreamEvent> {
+    async *chatStream(_params: any): AsyncGenerator<StreamEvent> {
       const events = responses[callIndex++] || []
       for (const event of events) {
         yield event
       }
     },
-    async chat(params: any) {
+    async chat(_params: any) {
       return { text: '', toolUses: [], usage: { inputTokens: 0, outputTokens: 0 }, stopReason: 'end_turn' }
     },
     async countTokens(messages: any[]) { return Math.ceil(JSON.stringify(messages).length / 4) },
@@ -27,7 +28,7 @@ function createMockTool(name: string): ToolSpec {
     name,
     description: `Mock tool ${name}`,
     schema: z.object({}),
-    execute: async (params: any) => ({ output: `executed ${name}`, isError: false }),
+    execute: async (_params: any) => ({ output: `executed ${name}`, isError: false }),
   }
 }
 

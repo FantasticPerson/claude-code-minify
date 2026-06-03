@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Message, ContextConfig } from '../src/core/types.js'
-import { CompactStrategy, NoCompact, BasicCompact, TieredCompact } from '../src/context/strategy.js'
+import { NoCompact, BasicCompact, TieredCompact } from '../src/context/strategy.js'
 import { ContextManager } from '../src/context/manager.js'
 
 // ============ Helpers ============

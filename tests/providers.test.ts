@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Message, ToolUseBlock, ToolResultBlock, StreamEvent } from '../src/core/types.js'
+import { Message, StreamEvent } from '../src/core/types.js'
 import { OpenAIProvider } from '../src/providers/openai.js'
 import { AnthropicProvider } from '../src/providers/anthropic.js'
 

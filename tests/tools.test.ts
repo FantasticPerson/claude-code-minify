@@ -192,7 +192,7 @@ describe('todo_write tool', () => {
         { content: 'Task 2', status: 'in_progress', activeForm: 'Doing task 2' },
         { content: 'Task 3', status: 'pending', activeForm: 'Doing task 3' },
       ],
-    })
+    }, { workingDir: tmpDir, sessionId: 'test' })
     expect(result.output).toContain('1/3 completed')
     expect(result.output).toContain('working on: Doing task 2')
     expect(result.isError).toBeFalsy()
@@ -200,7 +200,7 @@ describe('todo_write tool', () => {
   })
 
   it('handles empty todos array', async () => {
-    const result = await todoWriteTool.execute({ todos: [] })
+    const result = await todoWriteTool.execute({ todos: [] }, { workingDir: tmpDir, sessionId: 'test' })
     expect(result.output).toContain('0/0 completed')
     expect(result.isError).toBeFalsy()
   })
@@ -213,7 +213,7 @@ describe('todo_write tool', () => {
 describe('ask_user tool', () => {
   it('returns the question as output', async () => {
     const question = 'What is your favorite color?'
-    const result = await askUserTool.execute({ question })
+    const result = await askUserTool.execute({ question }, { workingDir: tmpDir, sessionId: 'test' })
     expect(result.output).toBe(question)
     expect(result.metadata?.needsUserResponse).toBe(true)
     expect(result.isError).toBeFalsy()
