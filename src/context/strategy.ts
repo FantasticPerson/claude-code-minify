@@ -20,7 +20,7 @@ export interface CompactStrategy {
 // ============ NoCompact ============
 
 export class NoCompact implements CompactStrategy {
-  compact(messages: Message[]): CompactResult {
+  compact(messages: Message[], _budgetTokens: number): CompactResult {
     return { messages, phase: 0 }
   }
 }
