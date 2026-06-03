@@ -1,5 +1,5 @@
 import {
-  Message, ToolUseBlock, ToolResultBlock, EngineResult, EngineEvent,
+  ToolUseBlock, ToolResultBlock, EngineResult, EngineEvent,
   ToolContext, ToolResult, ChatParams, UsageInfo, SecurityConfig,
   ContextConfig, ToolsConfig, GuardrailsConfig,
 } from './types.js'
@@ -38,7 +38,6 @@ export class Engine {
   private maxToolRounds: number
   private workingDir: string
   private security?: SecurityConfig
-  private contextConfig?: ContextConfig
   private toolsConfig?: ToolsConfig
   private systemPromptOptions: SystemPromptOptions
   private context: ContextManager
@@ -57,7 +56,6 @@ export class Engine {
     this.maxToolRounds = options.maxToolRounds
     this.workingDir = options.workingDir
     this.security = options.security
-    this.contextConfig = options.contextConfig
     this.toolsConfig = options.toolsConfig
     this.systemPromptOptions = options.systemPromptOptions
     this.context = new ContextManager(

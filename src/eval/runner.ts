@@ -1,10 +1,9 @@
 import { z } from 'zod'
-import { EvalScenario, EvalRunResult, ScenarioMetrics, EvalConfig, EvalToolDef, EvalToolCallRecord } from './types.js'
-import { ToolSpec, createToolDefinition } from '../tools/base.js'
-import { ToolContext, ToolResult, ToolDefinition, ChatParams, ChatResponse, StreamEvent, Message, UsageInfo } from '../core/types.js'
+import { EvalScenario, EvalRunResult, ScenarioMetrics, EvalConfig, EvalToolDef } from './types.js'
+import { ToolSpec } from '../tools/base.js'
+import { ToolContext, ToolResult, ChatParams, ChatResponse, StreamEvent, Message } from '../core/types.js'
 import { LLMProvider } from '../providers/base.js'
 import { Engine, EngineOptions } from '../core/engine.js'
-import { buildSystemPrompt, SystemPromptOptions } from '../core/system-prompt.js'
 
 /**
  * Convert an EvalToolDef into a ToolSpec compatible with the Engine.

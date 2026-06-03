@@ -128,13 +128,13 @@ export class BasicCompact implements CompactStrategy {
       const first = result[0]
       if (first.role === 'assistant' && first.content.some(b => b.type === 'tool_use')) {
         const toolUseIds = new Set(
-          first.content.filter(b => b.type === 'tool_use').map(b => (b as any).id),
+          first.content.filter((b): b is import('../core/types.js').ToolUseBlock => b.type === 'tool_use').map(b => b.id),
         )
         if (result.length >= 2 && result[1].role === 'user') {
           const resultIds = new Set(
             (result[1].content || [])
-              .filter(b => b.type === 'tool_result')
-              .map(b => (b as any).toolUseId),
+              .filter((b): b is import('../core/types.js').ToolResultBlock => b.type === 'tool_result')
+              .map(b => b.toolUseId),
           )
           if ([...toolUseIds].some(id => resultIds.has(id))) break
         }
