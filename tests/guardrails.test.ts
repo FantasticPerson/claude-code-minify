@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker } from '../src/guardrails/index.js'
+import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker, ResponseValidator, ValidationResult } from '../src/guardrails/index.js'
 
 describe('Nudge', () => {
   it('constructs with correct properties', () => {
@@ -112,5 +112,69 @@ describe('ErrorTracker', () => {
 
     expect(tracker.retriesExhausted).toBe(false)
     expect(tracker.toolErrorsExhausted).toBe(false)
+  })
+})
+
+describe('ResponseValidator', () => {
+  // --- Normal validation ---
+
+  it('valid tool call passes validation', () => {
+    const v = new ResponseValidator(['read', 'write'])
+    const result = v.validate([{ type: 'tool_use', id: '1', name: 'read', input: { file_path: '/a' } }])
+    expect(result.needsRetry).toBe(false)
+    expect(result.toolCalls).not.toBeNull()
+    expect(result.nudge).toBeNull()
+  })
+
+  it('unknown tool returns UnknownTool nudge', () => {
+    const v = new ResponseValidator(['read', 'write'])
+    const result = v.validate([{ type: 'tool_use', id: '1', name: 'hack', input: {} }])
+    expect(result.needsRetry).toBe(true)
+    expect(result.nudge).not.toBeNull()
+    expect(result.nudge!.kind).toBe(NudgeKind.UnknownTool)
+  })
+
+  it('non-object input returns ToolArgValidation nudge', () => {
+    const v = new ResponseValidator(['read'])
+    const result = v.validate([{ type: 'tool_use', id: '1', name: 'read', input: 'bad' as any }])
+    expect(result.needsRetry).toBe(true)
+    expect(result.nudge).not.toBeNull()
+    expect(result.nudge!.kind).toBe(NudgeKind.ToolArgValidation)
+  })
+
+  it('null input returns ToolArgValidation nudge', () => {
+    const v = new ResponseValidator(['read'])
+    const result = v.validate([{ type: 'tool_use', id: '1', name: 'read', input: null as any }])
+    expect(result.needsRetry).toBe(true)
+    expect(result.nudge).not.toBeNull()
+    expect(result.nudge!.kind).toBe(NudgeKind.ToolArgValidation)
+  })
+
+  it('empty toolCalls array returns Retry nudge', () => {
+    const v = new ResponseValidator(['read', 'write'])
+    const result = v.validate([])
+    expect(result.needsRetry).toBe(true)
+    expect(result.nudge).not.toBeNull()
+    expect(result.nudge!.kind).toBe(NudgeKind.Retry)
+  })
+
+  // --- Rescue parsing ---
+
+  it('rescues JSON wrapped in markdown code block', () => {
+    const v = new ResponseValidator(['read', 'write'], true)
+    const rawContent = '```json\n[{"name":"read","input":{"file_path":"/a"}}]\n```'
+    const result = v.validate(null, rawContent)
+    expect(result.needsRetry).toBe(false)
+    expect(result.toolCalls).not.toBeNull()
+    expect(result.toolCalls!.length).toBe(1)
+    expect(result.toolCalls![0].name).toBe('read')
+    expect(result.toolCalls![0].input).toEqual({ file_path: '/a' })
+  })
+
+  it('does not attempt rescue when rescueEnabled=false', () => {
+    const v = new ResponseValidator(['read', 'write'], false)
+    const rawContent = '```json\n[{"name":"read","input":{"file_path":"/a"}}]\n```'
+    const result = v.validate(null, rawContent)
+    expect(result.needsRetry).toBe(true)
   })
 })
