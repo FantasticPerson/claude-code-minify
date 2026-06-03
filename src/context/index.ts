@@ -6,3 +6,5 @@ export {
   BasicCompact,
   TieredCompact,
 } from './strategy.js'
+
+export { ContextManager } from './manager.js'

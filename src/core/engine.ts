@@ -6,7 +6,7 @@ import {
 import { LLMProvider, estimateMessagesTokens, estimateToolDefsTokens, estimateSystemPromptTokens } from '../providers/base.js'
 import { ToolSpec, createToolDefinition } from '../tools/base.js'
 import { buildSystemPrompt, SystemPromptOptions } from './system-prompt.js'
-import { ContextManager } from './context.js'
+import { ContextManager } from '../context/manager.js'
 import { userMessage, toolResultMessage } from './message.js'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from './defaults.js'
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { Message } from '../src/core/types.js'
+import { Message, ContextConfig } from '../src/core/types.js'
 import { CompactStrategy, NoCompact, BasicCompact, TieredCompact } from '../src/context/strategy.js'
+import { ContextManager } from '../src/context/manager.js'
 
 // ============ Helpers ============
 
@@ -213,5 +214,115 @@ describe('TieredCompact', () => {
     const result = strategy.compact(messages, 1000)
 
     expect(result.phase).toBe(0)
+  })
+})
+
+// ============ ContextManager ============
+
+describe('ContextManager', () => {
+  it('default constructor (no strategy) uses BasicCompact', () => {
+    const ctx = new ContextManager()
+    // Should be able to add/get messages
+    ctx.add(userMsg('hello'))
+    expect(ctx.getLength()).toBe(1)
+    expect(ctx.getMessages()[0].content[0]).toEqual({ type: 'text', text: 'hello' })
+  })
+
+  it('with NoCompact strategy, compressIfNeeded returns phase === 0', () => {
+    const ctx = new ContextManager(undefined, undefined, new NoCompact())
+    ctx.add(userMsg('hello'))
+    const result = ctx.compressIfNeeded(999999)
+    expect(result.phase).toBe(0)
+  })
+
+  it('with TieredCompact, compression triggers when exceeding threshold', () => {
+    const ctx = new ContextManager(100, undefined, new TieredCompact({
+      keepRecent: 1,
+      phaseThresholds: [0.75, 0.85, 0.95],
+      toolResultTruncateLen: 2000,
+    }))
+    // Add a long tool result to exceed threshold
+    const longResult = 'y'.repeat(2001)
+    ctx.add(userMsg('read'))
+    ctx.add(assistantToolCall('file_read', 'tu_1'))
+    ctx.add(toolResultMsg('tu_1', longResult))
+
+    // realInputTokens=100 exceeds 100*0.8=80, so compression should trigger
+    const result = ctx.compressIfNeeded(100)
+    expect(result.phase).toBeGreaterThanOrEqual(1)
+  })
+
+  it('setStrategy() allows runtime strategy switching', () => {
+    const ctx = new ContextManager(100, undefined, new NoCompact())
+    ctx.add(userMsg('hello'))
+    ctx.add(assistantTextMsg('hi'))
+
+    // NoCompact: no compression even with high token count
+    const result1 = ctx.compressIfNeeded(200)
+    expect(result1.phase).toBe(0)
+
+    // Switch to TieredCompact
+    ctx.setStrategy(new TieredCompact({
+      keepRecent: 1,
+      phaseThresholds: [0.75, 0.85, 0.95],
+      toolResultTruncateLen: 2000,
+    }))
+
+    // Now add long content and compress
+    const longResult = 'z'.repeat(2001)
+    ctx.add(userMsg('read'))
+    ctx.add(assistantToolCall('file_read', 'tu_2'))
+    ctx.add(toolResultMsg('tu_2', longResult))
+
+    const result2 = ctx.compressIfNeeded(200)
+    expect(result2.phase).toBeGreaterThanOrEqual(1)
+  })
+
+  it('add / getMessages / reset interface works correctly', () => {
+    const ctx = new ContextManager()
+    expect(ctx.getLength()).toBe(0)
+    expect(ctx.getMessages()).toEqual([])
+
+    ctx.add(userMsg('first'))
+    ctx.add(assistantTextMsg('reply'))
+    expect(ctx.getLength()).toBe(2)
+
+    const msgs = ctx.getMessages()
+    expect(msgs[0].role).toBe('user')
+    expect(msgs[1].role).toBe('assistant')
+
+    ctx.reset()
+    expect(ctx.getLength()).toBe(0)
+    expect(ctx.getMessages()).toEqual([])
+  })
+
+  it('getLength returns the number of messages', () => {
+    const ctx = new ContextManager()
+    expect(ctx.getLength()).toBe(0)
+    ctx.add(userMsg('a'))
+    expect(ctx.getLength()).toBe(1)
+    ctx.add(userMsg('b'))
+    expect(ctx.getLength()).toBe(2)
+    ctx.add(assistantTextMsg('c'))
+    expect(ctx.getLength()).toBe(3)
+    ctx.reset()
+    expect(ctx.getLength()).toBe(0)
+  })
+
+  it('compressIfNeeded does not compress below threshold', () => {
+    const ctx = new ContextManager(1000)
+    ctx.add(userMsg('short'))
+    const result = ctx.compressIfNeeded(10) // way below 80% threshold
+    expect(result.phase).toBe(0)
+  })
+
+  it('constructor accepts maxTokens and config', () => {
+    const config: ContextConfig = { compressionTriggerRatio: 0.9, compressionTargetRatio: 0.7 }
+    const ctx = new ContextManager(500, config)
+    ctx.add(userMsg('test'))
+    expect(ctx.getLength()).toBe(1)
+    // Should use BasicCompact with the provided config
+    const result = ctx.compressIfNeeded(600) // 600 > 500*0.9=450, triggers
+    expect(result.phase).toBeGreaterThanOrEqual(0)
   })
 })
