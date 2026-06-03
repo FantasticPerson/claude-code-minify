@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Nudge, NudgeKind, NudgeTemplates } from '../src/guardrails/index.js'
+import { Nudge, NudgeKind, NudgeTemplates, ErrorTracker } from '../src/guardrails/index.js'
 
 describe('Nudge', () => {
   it('constructs with correct properties', () => {
@@ -41,5 +41,76 @@ describe('NudgeTemplates', () => {
     const result = NudgeTemplates.toolArgValidation('my_tool', 'bad_args')
     expect(result).toContain('my_tool')
     expect(result).toContain('JSON object')
+  })
+})
+
+describe('ErrorTracker', () => {
+  it('initial state has retriesExhausted=false and toolErrorsExhausted=false', () => {
+    const tracker = new ErrorTracker()
+    expect(tracker.retriesExhausted).toBe(false)
+    expect(tracker.toolErrorsExhausted).toBe(false)
+  })
+
+  it('retriesExhausted becomes true after maxRetries (default=3) retries', () => {
+    const tracker = new ErrorTracker()
+    expect(tracker.retriesExhausted).toBe(false)
+
+    tracker.recordRetry()
+    tracker.recordRetry()
+    expect(tracker.retriesExhausted).toBe(false)
+
+    tracker.recordRetry()
+    expect(tracker.retriesExhausted).toBe(true)
+  })
+
+  it('toolErrorsExhausted becomes true after maxToolErrors (default=2) tool errors', () => {
+    const tracker = new ErrorTracker()
+    expect(tracker.toolErrorsExhausted).toBe(false)
+
+    tracker.recordToolError()
+    expect(tracker.toolErrorsExhausted).toBe(false)
+
+    tracker.recordToolError()
+    expect(tracker.toolErrorsExhausted).toBe(true)
+  })
+
+  it('reset clears all counters and flags', () => {
+    const tracker = new ErrorTracker()
+    tracker.recordRetry()
+    tracker.recordRetry()
+    tracker.recordRetry()
+    tracker.recordToolError()
+    tracker.recordToolError()
+
+    expect(tracker.retriesExhausted).toBe(true)
+    expect(tracker.toolErrorsExhausted).toBe(true)
+
+    tracker.reset()
+
+    expect(tracker.retriesExhausted).toBe(false)
+    expect(tracker.toolErrorsExhausted).toBe(false)
+  })
+
+  it('supports custom maxRetries', () => {
+    const tracker = new ErrorTracker(5, 2)
+
+    for (let i = 0; i < 4; i++) {
+      tracker.recordRetry()
+    }
+    expect(tracker.retriesExhausted).toBe(false)
+
+    tracker.recordRetry()
+    expect(tracker.retriesExhausted).toBe(true)
+  })
+
+  it('retry and tool error counters are independent', () => {
+    const tracker = new ErrorTracker(3, 2)
+
+    tracker.recordRetry()
+    tracker.recordRetry()
+    tracker.recordToolError()
+
+    expect(tracker.retriesExhausted).toBe(false)
+    expect(tracker.toolErrorsExhausted).toBe(false)
   })
 })
