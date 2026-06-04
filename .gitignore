@@ -47,3 +47,5 @@ bun.lock
 .claude/
 
 claude-code-cli/
+
+forge/

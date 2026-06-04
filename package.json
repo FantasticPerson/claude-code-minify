@@ -35,7 +35,9 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval": "tsx src/eval/cli.ts",
+    "eval:verbose": "tsx src/eval/cli.ts --verbose"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
