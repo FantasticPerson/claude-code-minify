@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { LLMProvider } from './base.js'
-import { ChatParams, ChatResponse, StreamEvent, Message, ToolUseBlock, UsageInfo } from '../core/types.js'
+import { ChatParams, ChatResponse, StreamEvent, Message, UsageInfo } from '../core/types.js'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic

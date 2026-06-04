@@ -4,6 +4,7 @@ export type {
   EngineResult, EngineEvent, ToolResult, ToolContext, ToolRegistration, Skill, Memory,
   MemoryType, UsageInfo, StreamEvent, ChatParams, ChatResponse, ToolDefinition,
   ContextConfig, ToolsConfig, ToolBashConfig, ToolGrepConfig, ToolGlobConfig, ToolReadConfig, ToolWriteConfig, ToolEditConfig,
+  GuardrailsConfig,
 } from './core/types.js'
 
 // SDK
@@ -147,3 +148,16 @@ export { OpenAIProvider } from './providers/openai.js'
 export { AnthropicProvider } from './providers/anthropic.js'
 export { MemoryManager } from './memory/manager.js'
 export * as Defaults from './core/defaults.js'
+
+// Guardrails
+export { GuardrailsMiddleware } from './guardrails/middleware.js'
+export type { CheckAction, CheckResult } from './guardrails/middleware.js'
+export { NudgeKind } from './guardrails/nudge.js'
+export { NudgeTemplates } from './guardrails/nudge-templates.js'
+export { ResponseValidator } from './guardrails/validator.js'
+export { ErrorTracker } from './guardrails/error-tracker.js'
+
+// Context strategies
+export { ContextManager } from './context/manager.js'
+export { CompactStrategy, NoCompact, BasicCompact, TieredCompact } from './context/index.js'
+export type { CompactResult, TieredCompactOptions } from './context/index.js'
