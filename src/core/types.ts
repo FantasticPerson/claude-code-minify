@@ -255,6 +255,8 @@ export interface ClaudeSDKConfig {
   security?: SecurityConfig
   context?: ContextConfig
   tools?: ToolsConfig
+  /** Guardrails 错误防护配置 */
+  guardrails?: GuardrailsConfig
   autoLoadClaudeMD?: boolean
   instructions?: string
   skillsDir?: string

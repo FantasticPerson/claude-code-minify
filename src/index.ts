@@ -115,6 +115,7 @@ export class ClaudeSDK {
       security: this.config.security,
       contextConfig: this.config.context,
       toolsConfig: this.config.tools,
+      guardrailsConfig: this.config.guardrails,
       systemPromptOptions: {
         workingDir: this.config.workingDir,
         customInstructions: this.config.instructions,
