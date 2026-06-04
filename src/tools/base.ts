@@ -10,7 +10,7 @@ export interface ToolSpec {
 }
 
 export function createToolDefinition(tool: ToolSpec): ToolDefinition {
-  const jsonSchema = zodToJsonSchema(tool.schema, { target: 'openApi3' }) as Record<string, any>
+  const jsonSchema = zodToJsonSchema(tool.schema) as Record<string, any>
   delete jsonSchema.$schema
   return { name: tool.name, description: tool.description, inputSchema: jsonSchema }
 }

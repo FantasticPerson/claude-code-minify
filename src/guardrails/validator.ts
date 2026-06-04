@@ -23,18 +23,12 @@ export class ResponseValidator {
         if (rescued) {
           toolCalls = rescued
         } else {
-          return {
-            toolCalls: null,
-            nudge: new Nudge('user', NudgeTemplates.retry(rawContent), NudgeKind.Retry),
-            needsRetry: true,
-          }
+          // No malformed tool calls found — valid text-only response
+          return { toolCalls: null, nudge: null, needsRetry: false }
         }
       } else {
-        return {
-          toolCalls: null,
-          nudge: new Nudge('user', NudgeTemplates.retry(rawContent ?? ''), NudgeKind.Retry),
-          needsRetry: true,
-        }
+        // No tool calls and no rescue needed — valid text-only response
+        return { toolCalls: null, nudge: null, needsRetry: false }
       }
     }
 

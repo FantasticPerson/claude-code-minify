@@ -211,11 +211,11 @@ describe('todo_write tool', () => {
 // ============================================================================
 
 describe('ask_user tool', () => {
-  it('returns the question as output', async () => {
+  it('returns error when no callback configured', async () => {
     const question = 'What is your favorite color?'
     const result = await askUserTool.execute({ question }, { workingDir: tmpDir, sessionId: 'test' })
-    expect(result.output).toBe(question)
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('no user interaction callback')
     expect(result.metadata?.needsUserResponse).toBe(true)
-    expect(result.isError).toBeFalsy()
   })
 })

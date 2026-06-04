@@ -31,15 +31,7 @@ export class GuardrailsMiddleware {
     if (validationResult.needsRetry) {
       const nudge = validationResult.nudge!;
 
-      // Check if already exhausted from previous calls
-      if (this.errorTracker.retriesExhausted) {
-        return { action: 'fatal', reason: 'Too many retries' };
-      }
-      if (this.errorTracker.toolErrorsExhausted) {
-        return { action: 'fatal', reason: 'Too many tool errors' };
-      }
-
-      // Record the appropriate error type
+      // Record the error first, then check exhaustion
       if (
         nudge.kind === NudgeKind.ToolArgValidation ||
         nudge.kind === NudgeKind.UnknownTool
@@ -47,6 +39,14 @@ export class GuardrailsMiddleware {
         this.errorTracker.recordToolError();
       } else {
         this.errorTracker.recordRetry();
+      }
+
+      // Check if exhausted AFTER recording
+      if (this.errorTracker.retriesExhausted) {
+        return { action: 'fatal', reason: 'Too many retries' };
+      }
+      if (this.errorTracker.toolErrorsExhausted) {
+        return { action: 'fatal', reason: 'Too many tool errors' };
       }
 
       // Not exhausted — return retry or tool_error

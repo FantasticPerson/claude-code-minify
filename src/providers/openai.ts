@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { LLMProvider } from './base.js'
+import { LLMProvider, estimateMessagesTokens } from './base.js'
 import { ChatParams, ChatResponse, StreamEvent, Message, ToolUseBlock, UsageInfo } from '../core/types.js'
 
 export class OpenAIProvider implements LLMProvider {
@@ -21,7 +21,10 @@ export class OpenAIProvider implements LLMProvider {
       temperature: params.temperature,
     })
 
-    const choice = response.choices[0]
+    const choice = response.choices?.[0]
+    if (!choice?.message) {
+      return { text: '', toolUses: [], usage: { inputTokens: 0, outputTokens: 0 }, stopReason: 'end_turn' }
+    }
     const text = choice.message.content || ''
     const toolUses = this.extractToolUses(choice.message)
 
@@ -102,7 +105,7 @@ export class OpenAIProvider implements LLMProvider {
 
     for (const [, buf] of toolBuffers) {
       let parsed: Record<string, any> = {}
-      try { parsed = JSON.parse(buf.input) } catch {}
+      try { parsed = JSON.parse(buf.input) } catch { console.error('[OpenAI] Failed to parse tool input JSON for', buf.name) }
       yield { type: 'tool_use_end', id: buf.id, name: buf.name, input: parsed }
     }
 
@@ -110,15 +113,7 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async countTokens(messages: Message[]): Promise<number> {
-    let total = 0
-    for (const msg of messages) {
-      total += 4
-      for (const block of msg.content) {
-        if (block.type === 'text') total += Math.ceil(block.text.length / 4)
-        else total += 20
-      }
-    }
-    return total
+    return estimateMessagesTokens(messages)
   }
 
   private convertMessages(system: { text: string }[], messages: Message[]): OpenAI.ChatCompletionMessageParam[] {

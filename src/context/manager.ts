@@ -33,9 +33,8 @@ export class ContextManager {
    * 返回 CompactResult（包含 phase 信息）
    */
   compressIfNeeded(realInputTokens: number): CompactResult {
-    if (realInputTokens <= this.maxTokens * 0.8) {
-      return { messages: this.messages, phase: 0 }
-    }
+    // Delegate compression decision to the strategy
+    // The strategy uses its own configured trigger ratio
     const result = this.strategy.compact(this.messages, this.maxTokens)
     if (result.phase > 0) {
       this.messages = result.messages

@@ -16,8 +16,8 @@ function matchGlob(pattern: string, filename: string): boolean {
   return new RegExp(`^${regexStr}$`).test(filename)
 }
 
-async function walkDir(dir: string, pattern: string, results: string[], limit: number, skipDirs: string[], prefix: string = ''): Promise<void> {
-  if (results.length >= limit) return
+async function walkDir(dir: string, pattern: string, results: string[], limit: number, skipDirs: string[], prefix: string = '', depth: number = 0): Promise<void> {
+  if (results.length >= limit || depth > 20) return
   let entries
   try {
     entries = await fs.readdir(dir, { withFileTypes: true })
@@ -29,7 +29,7 @@ async function walkDir(dir: string, pattern: string, results: string[], limit: n
     const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
     if (entry.isDirectory()) {
       if (skipDirs.includes(entry.name)) continue
-      await walkDir(path.join(dir, entry.name), pattern, results, limit, skipDirs, relPath)
+      await walkDir(path.join(dir, entry.name), pattern, results, limit, skipDirs, relPath, depth + 1)
     } else if (entry.isFile()) {
       if (matchGlob(pattern, relPath)) {
         results.push(relPath)
@@ -47,7 +47,7 @@ export const globTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const searchPath = params.path ? path.resolve(ctx.workingDir, params.path) : ctx.workingDir
-    const secErr = checkFileSecurity(searchPath, ctx.workingDir, ctx.security?.file)
+    const secErr = await checkFileSecurity(searchPath, ctx.workingDir, ctx.security?.file)
     if (secErr) return { output: secErr, isError: true }
     try {
       const limit = ctx.tools?.glob?.maxResults ?? DEFAULT_GLOB_MAX_RESULTS

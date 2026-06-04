@@ -116,8 +116,11 @@ export class BasicCompact implements CompactStrategy {
     const result: Message[] = []
     let used = 0
 
+    // Pre-compute token estimates to avoid O(n²) repeated estimation
+    const tokenEstimates = messages.map(m => estimateMessagesTokens([m]))
+
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msgTokens = estimateMessagesTokens([messages[i]])
+      const msgTokens = tokenEstimates[i]
       if (used + msgTokens > target && result.length >= 2) break
       used += msgTokens
       result.unshift(messages[i])
@@ -213,7 +216,10 @@ export class TieredCompact implements CompactStrategy {
   }
 
   private phase1TruncateToolResults(messages: Message[]): void {
-    for (const msg of messages) {
+    const protectedStart = Math.max(0, messages.length - this.keepRecent * 2)
+    for (let i = 0; i < messages.length; i++) {
+      if (i >= protectedStart) continue // Protect recent messages
+      const msg = messages[i]
       if (msg.role === 'user') {
         for (const block of msg.content) {
           if (

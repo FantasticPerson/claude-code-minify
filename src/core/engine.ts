@@ -160,6 +160,18 @@ export class Engine {
         const checkResult = this.guardrails.check(toolUses, responseText || undefined)
 
         if (checkResult.action === 'fatal') {
+          // Add assistant message + error tool results to keep message sequence complete
+          const assistantContent: (import('./types.js').TextBlock | ToolUseBlock)[] = []
+          if (responseText) assistantContent.push({ type: 'text', text: responseText })
+          assistantContent.push(...toolUses)
+          this.context.add({ role: 'assistant', content: assistantContent })
+          const errorResults = toolUses.map(tu => ({
+            type: 'tool_result' as const,
+            toolUseId: tu.id,
+            content: `Error: Guardrails rejected — ${checkResult.reason}`,
+            isError: true,
+          }))
+          this.context.add(toolResultMessage(errorResults))
           yield { type: 'error', error: new Error(`Guardrails exhausted: ${checkResult.reason}`) }
           return
         }

@@ -14,7 +14,7 @@ export const fileWriteTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const filePath = path.resolve(ctx.workingDir, params.file_path)
-    const secErr = checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
+    const secErr = await checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
     if (secErr) return { output: secErr, isError: true }
     const secLimit = ctx.security?.file?.maxFileSize ?? Infinity
     const toolLimit = ctx.tools?.write?.maxFileSize ?? Infinity

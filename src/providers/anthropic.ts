@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { LLMProvider } from './base.js'
+import { LLMProvider, estimateMessagesTokens } from './base.js'
 import { ChatParams, ChatResponse, StreamEvent, Message, UsageInfo } from '../core/types.js'
 
 export class AnthropicProvider implements LLMProvider {
@@ -26,7 +26,7 @@ export class AnthropicProvider implements LLMProvider {
       text: textBlocks.map(b => b.text).join(''),
       toolUses: toolBlocks.map(b => ({ type: 'tool_use' as const, id: b.id, name: b.name, input: b.input as Record<string, any> })),
       usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens },
-      stopReason: response.stop_reason === 'tool_use' ? 'tool_use' : 'end_turn',
+      stopReason: response.stop_reason === 'tool_use' ? 'tool_use' : (response.stop_reason ?? 'end_turn'),
     }
   }
 
@@ -80,9 +80,7 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async countTokens(messages: Message[]): Promise<number> {
-    let total = 0
-    for (const msg of messages) { total += 4; for (const block of msg.content) { if (block.type === 'text') total += Math.ceil(block.text.length / 4); else total += 20 } }
-    return total
+    return estimateMessagesTokens(messages)
   }
 
   private convertMessages(messages: Message[]): Anthropic.MessageParam[] {

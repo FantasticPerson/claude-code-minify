@@ -16,7 +16,7 @@ export const fileEditTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const filePath = path.resolve(ctx.workingDir, params.file_path)
-    const secErr = checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
+    const secErr = await checkFileSecurity(filePath, ctx.workingDir, ctx.security?.file)
     if (secErr) return { output: secErr, isError: true }
     if (params.old_string === params.new_string) return { output: 'Error: old_string and new_string are identical', isError: true }
     try {

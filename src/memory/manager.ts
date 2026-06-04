@@ -34,7 +34,11 @@ export class MemoryManager {
           const stat = await fs.stat(path.join(dir, file))
           memories.push({ type: t, name: file.replace('.md', ''), content, updatedAt: stat.mtime })
         }
-      } catch {}
+      } catch (err) {
+        if ((err as any).code !== 'ENOENT' && (err as any).code !== 'ENOTDIR') {
+          console.error(`[Memory] Failed to load from ${t}:`, (err as Error).message)
+        }
+      }
     }
     return memories
   }

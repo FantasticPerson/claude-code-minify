@@ -13,7 +13,9 @@ export async function loadSkills(skillsDir?: string): Promise<Skill[]> {
           if (skill) skills.push(skill)
         }
       }
-    } catch {}
+    } catch (err) {
+      if ((err as any).code !== 'ENOENT') console.error('[Skills] Failed to load skills:', (err as Error).message)
+    }
   }
   return skills
 }

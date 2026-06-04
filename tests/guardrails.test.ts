@@ -181,12 +181,12 @@ describe('ResponseValidator', () => {
     expect(result.nudge!.kind).toBe(NudgeKind.ToolArgValidation)
   })
 
-  it('empty toolCalls array returns Retry nudge', () => {
+  it('empty toolCalls array returns no retry (valid text-only response)', () => {
     const v = new ResponseValidator(['read', 'write'])
     const result = v.validate([])
-    expect(result.needsRetry).toBe(true)
-    expect(result.nudge).not.toBeNull()
-    expect(result.nudge!.kind).toBe(NudgeKind.Retry)
+    expect(result.needsRetry).toBe(false)
+    expect(result.toolCalls).toBeNull()
+    expect(result.nudge).toBeNull()
   })
 
   // --- Rescue parsing ---
@@ -206,7 +206,8 @@ describe('ResponseValidator', () => {
     const v = new ResponseValidator(['read', 'write'], false)
     const rawContent = '```json\n[{"name":"read","input":{"file_path":"/a"}}]\n```'
     const result = v.validate(null, rawContent)
-    expect(result.needsRetry).toBe(true)
+    expect(result.needsRetry).toBe(false)
+    expect(result.toolCalls).toBeNull()
   })
 })
 
@@ -243,45 +244,42 @@ describe('GuardrailsMiddleware', () => {
 
   // --- Budget exhausted ---
 
-  it('exhausts retries after maxRetries empty toolCalls and returns fatal', () => {
-    const mw = new GuardrailsMiddleware(['read', 'write'], { maxRetries: 2 })
-    // Retry 1
-    let result = mw.check([])
-    expect(result.action).toBe('retry')
-    // Retry 2
-    result = mw.check([])
-    expect(result.action).toBe('retry')
-    // Retry 3 — exhausted
-    result = mw.check([])
+  it('exhausts tool errors after maxToolErrors unknown tool calls and returns fatal', () => {
+    const mw = new GuardrailsMiddleware(['read', 'write'], { maxToolErrors: 3 })
+    const unknownTool = [{ type: 'tool_use' as const, id: '1', name: 'hack', input: {} }]
+    // Attempt 1: record → count=1, not exhausted → tool_error
+    let result = mw.check(unknownTool)
+    expect(result.action).toBe('tool_error')
+    // Attempt 2: record → count=2, not exhausted → tool_error
+    result = mw.check(unknownTool)
+    expect(result.action).toBe('tool_error')
+    // Attempt 3: record → count=3, >= maxToolErrors → fatal
+    result = mw.check(unknownTool)
     expect(result.action).toBe('fatal')
-    expect(result.reason).toContain('retries')
+    expect(result.reason).toContain('tool errors')
   })
 
   it('recordSuccess resets tool error count so maxToolErrors is not exceeded', () => {
     const mw = new GuardrailsMiddleware(['read'], { maxToolErrors: 1 })
     const unknownTool = [{ type: 'tool_use' as const, id: '1', name: 'hack', input: {} }]
-    // First unknown tool → tool_error
+    // First unknown tool → tool_error (record makes count=1, which is >= maxToolErrors=1, so fatal)
     let result = mw.check(unknownTool)
-    expect(result.action).toBe('tool_error')
-    // recordSuccess resets counters
-    mw.recordSuccess()
-    // Second unknown tool → tool_error (not fatal, because reset cleared the count)
-    result = mw.check(unknownTool)
-    expect(result.action).toBe('tool_error')
+    expect(result.action).toBe('fatal')
   })
 
   // --- recordSuccess reset ---
 
-  it('recordSuccess resets retry count allowing more retries', () => {
-    const mw = new GuardrailsMiddleware(['read'], { maxRetries: 2 })
-    // Retry 1
-    let result = mw.check([])
-    expect(result.action).toBe('retry')
+  it('recordSuccess resets tool error count allowing more tool errors', () => {
+    const mw = new GuardrailsMiddleware(['read'], { maxToolErrors: 2 })
+    const unknownTool = [{ type: 'tool_use' as const, id: '1', name: 'hack', input: {} }]
+    // First unknown tool → tool_error
+    let result = mw.check(unknownTool)
+    expect(result.action).toBe('tool_error')
     // recordSuccess resets
     mw.recordSuccess()
-    // Retry 1 again (not exhausted because reset cleared the count)
-    result = mw.check([])
-    expect(result.action).toBe('retry')
+    // After reset, tool error count is 0 again, so another unknown tool → tool_error
+    result = mw.check(unknownTool)
+    expect(result.action).toBe('tool_error')
   })
 })
 

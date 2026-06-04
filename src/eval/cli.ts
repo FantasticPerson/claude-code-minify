@@ -58,6 +58,7 @@ async function main(): Promise<void> {
   const verbose = hasFlag(args, '--verbose')
   const providerName = getArg(args, '--provider')
   const apiKey = getArg(args, '--api-key') || getArg(args, '--api_key')
+    || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY
   const baseURL = getArg(args, '--base-url')
   const model = getArg(args, '--model')
 

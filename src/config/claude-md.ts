@@ -18,7 +18,11 @@ export async function loadClaudeMD(options: ClaudeMDOptions): Promise<string> {
     for (const file of files.sort()) {
       if (file.endsWith('.md')) parts.push(await tryReadFile(path.join(rulesDir, file)))
     }
-  } catch {}
+  } catch (err) {
+    if ((err as any).code !== 'ENOENT' && (err as any).code !== 'ENOTDIR') {
+      console.error('[Config] Failed to load rules:', (err as Error).message)
+    }
+  }
   for (const name of ['GEMINI.md', 'AGENTS.md', '.cursorrules']) {
     parts.push(await tryReadFile(path.join(options.workingDir, name)))
   }
@@ -29,6 +33,6 @@ export async function loadClaudeMD(options: ClaudeMDOptions): Promise<string> {
 async function tryReadFile(filePath: string): Promise<string> {
   try {
     const content = await fs.readFile(filePath, 'utf-8')
-    return content.replace(/^---[\s\S]*?---\n*/, '').trim()
+    return content.replace(/^---\n([\s\S]*?)\n---\n/, '').trim()
   } catch { return '' }
 }

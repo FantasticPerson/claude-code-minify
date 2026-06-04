@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { ToolSpec } from './base.js'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import * as path from 'path'
 import { checkFileSecurity } from './security.js'
 import { DEFAULT_GREP_TIMEOUT, DEFAULT_GREP_MAX_COLUMNS, DEFAULT_GREP_MAX_BUFFER, DEFAULT_GREP_SKIP_DIRS } from '../core/defaults.js'
@@ -18,7 +18,7 @@ export const grepTool: ToolSpec = {
   }),
   execute: async (params, ctx) => {
     const searchPath = path.resolve(ctx.workingDir, params.path || '.')
-    const secErr = checkFileSecurity(searchPath, ctx.workingDir, ctx.security?.file)
+    const secErr = await checkFileSecurity(searchPath, ctx.workingDir, ctx.security?.file)
     if (secErr) return { output: secErr, isError: true }
     const outputMode = params.output_mode ?? 'files_with_matches'
     const timeout = ctx.tools?.grep?.timeout ?? DEFAULT_GREP_TIMEOUT
@@ -36,9 +36,9 @@ export const grepTool: ToolSpec = {
     else args.push('-n')
     args.push('--max-columns', String(maxColumns), '--', params.pattern, searchPath)
     return new Promise((resolve) => {
-      exec(args.join(' '), { cwd: ctx.workingDir, timeout, maxBuffer }, (error, stdout) => {
+      execFile('rg', args.slice(1), { cwd: ctx.workingDir, timeout, maxBuffer }, (error, stdout) => {
         if (error && !stdout) { resolve({ output: 'No matches found' }); return }
-        let output = (stdout || '').replace(new RegExp(ctx.workingDir + '/', 'g'), '')
+        let output = (stdout || '').split(ctx.workingDir + '/').join('')
         if (params.head_limit && params.head_limit > 0) {
           const lines = output.split('\n')
           if (lines.length > params.head_limit) output = lines.slice(0, params.head_limit).join('\n') + '\n... [truncated]'

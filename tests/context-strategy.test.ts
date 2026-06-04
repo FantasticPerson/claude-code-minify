@@ -117,18 +117,27 @@ describe('TieredCompact', () => {
   it('Phase 1: truncates long tool results (>2000 chars) at >=75% budget', () => {
     const strategy = new TieredCompact({ keepRecent: 2, phaseThresholds: [0.75, 0.85, 0.95], toolResultTruncateLen: 2000 })
 
-    // Long tool result to push tokens over 75% of budget=100 (75 tokens)
+    // Use a large budget so that after phase 1 truncation we stay below 85%
+    // This ensures phase 1 is the final phase (not phase 2)
     // 2001 chars = ~501 tokens for the content alone
+    // keepRecent=2 → protects last 4 messages
     const longResult = 'y'.repeat(2001)
     const messages: Message[] = [
       userMsg('read'),
       assistantToolCall('file_read', 'tu_1'),
-      toolResultMsg('tu_1', longResult),
+      toolResultMsg('tu_1', longResult),  // old result — should be truncated
+      // Protected recent messages (keepRecent=2 rounds = 4 messages)
+      userMsg('recent1'),
+      assistantToolCall('file_read', 'tu_2'),
+      toolResultMsg('tu_2', 'short'),
+      userMsg('recent2'),
     ]
-    const result = strategy.compact(messages, 100)
+    // Use budget=200 so phase 1 truncation is enough (stays below 85% = 170)
+    // Long result alone ≈ 500 tokens, so total > 150 (75% of 200) triggers phase 1
+    const result = strategy.compact(messages, 200)
 
     expect(result.phase).toBeGreaterThanOrEqual(1)
-    // Tool result should be truncated
+    // Old tool result (index 2) should be truncated
     const toolResultBlock = result.messages[2].content[0] as any
     expect(toolResultBlock.content).toContain('[Truncated:')
     expect(toolResultBlock.content).toContain('2001')
