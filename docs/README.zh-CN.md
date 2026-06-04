@@ -29,7 +29,7 @@
 | **CLAUDE.md** | 支持 | 支持（加载逻辑相同） |
 | **技能系统** | 内置 + 插件技能 | 内置 6 个技能 + 自定义技能 |
 | **记忆管理** | 自动记忆 | 手动 API 调用 |
-| **上下文管理** | 自动裁剪 | 自动裁剪 + 两阶段压缩策略 |
+| **上下文管理** | 自动裁剪 | 自动裁剪 + **可插拔压缩策略**（NoCompact / BasicCompact / TieredCompact） |
 | **流式输出** | 终端渲染 | AsyncGenerator 事件流 |
 | **自定义工具** | 通过插件/Agent | `registerTool()` API |
 | **自定义 Provider** | 不支持 | 支持实现 `LLMProvider` 接口 |
@@ -44,7 +44,7 @@
 - **8 个内置工具** — `file_read`、`file_write`、`file_edit`、`bash`、`grep`、`glob`、`todo_write`、`ask_user`
 - **CLAUDE.md 项目指令加载** — 完整的多文件加载、合并、优先级逻辑
 - **系统提示词构建** — 核心提示词 + 项目指令 + 记忆 + 技能 + 环境信息
-- **上下文窗口管理** — 自动估算 token 用量，超限时两阶段智能裁剪历史消息
+- **上下文窗口管理** — 自动估算 token 用量，超限时智能裁剪历史消息（支持可插拔压缩策略）
 - **技能系统** — 6 个内置技能（brainstorming、debugging、tdd 等）
 
 ### 去掉了什么
@@ -111,6 +111,9 @@
   - [技能系统](#技能系统)
   - [记忆管理](#记忆管理)
   - [CLAUDE.md 项目指令](#claudemd-项目指令)
+- [Guardrails 错误防护](#guardrails-错误防护)
+- [上下文管理](#上下文管理)
+- [Eval 评估基准](#eval-评估基准)
 - [内置工具](#内置工具)
   - [file_read - 读取文件](#file_read---读取文件)
   - [file_write - 写入文件](#file_write---写入文件)
@@ -125,10 +128,12 @@
   - [Anthropic Provider](#anthropic-provider)
   - [自定义 Provider](#自定义-provider)
 - [系统提示词](#系统提示词)
-- [上下文管理](#上下文管理)
 - [类型定义参考](#类型定义参考)
+- [项目结构](#项目结构)
 - [构建与发布](#构建与发布)
 - [常见问题](#常见问题)
+- [完整示例](#完整示例)
+- [License](#license)
 
 ---
 
@@ -296,6 +301,9 @@ interface ClaudeSDKConfig {
   /** 工具行为配置 */
   tools?: ToolsConfig
 
+  /** Guardrails 错误防护配置 */
+  guardrails?: GuardrailsConfig
+
   /** 用户交互回调函数，用于处理 ask_user 工具的提问 */
   askUserCallback?: (question: string) => Promise<string>
 }
@@ -315,6 +323,21 @@ interface ContextConfig {
   compressRecentRounds?: number
   /** 工具结果超过此字符数时进行压缩，默认 500 */
   toolResultCompressThreshold?: number
+}
+```
+
+### Guardrails 错误防护配置
+
+配置 LLM 响应的验证和纠错策略。
+
+```typescript
+interface GuardrailsConfig {
+  /** 最大重试次数（默认 3） */
+  maxRetries?: number
+  /** 最大连续工具错误次数（默认 2） */
+  maxToolErrors?: number
+  /** 是否启用 rescue 解析（默认 true） */
+  rescueEnabled?: boolean
 }
 ```
 
@@ -1095,6 +1118,142 @@ CLAUDE.md 是项目级的 AI 指令文件，SDK 会按优先级自动加载并�
 
 ---
 
+## Guardrails 错误防护
+
+Guardrails 中间件包裹在 Engine 的工具调用循环外层，在 LLM 返回的工具调用到达工具执行之前进行拦截、验证和纠错。
+
+**防护能力：**
+
+| 问题 | 处理方式 |
+|------|----------|
+| 未知工具名 | 拦截并向模型发送纠错提示，列出可用工具 |
+| 参数格式错误 | 拦截非 object 参数，要求模型重新生成 |
+| 格式错误的工具调用 | Rescue 解析 — 从 markdown 代码块、`[TOOL_CALLS]` 等非标准格式中提取结构化调用 |
+| 重试耗尽 | 预算控制（默认 3 次重试、2 次工具错误），超出后抛出 `GuardrailsExhaustedError` |
+
+```typescript
+const sdk = new ClaudeSDK({
+  provider: 'openai',
+  apiKey: 'sk-xxx',
+  model: 'gpt-4o',
+  workingDir: '.',
+  guardrails: {
+    maxRetries: 3,        // 最大重试次数（默认 3）
+    maxToolErrors: 2,     // 最大连续工具错误次数（默认 2）
+    rescueEnabled: true,  // 是否启用 rescue 解析（默认 true）
+  },
+})
+```
+
+不配置 `guardrails` 时，中间件不启用，Engine 行为与之前完全一致。
+
+### Guardrails 工作流
+
+```
+LLM 返回工具调用 → ResponseValidator 校验
+  ├─ 格式正确 → 执行工具
+  ├─ 未知工具 → 生成纠错 nudge，重新调用 LLM（消耗 tool_error 预算）
+  ├─ 参数错误 → 生成纠错 nudge，重新调用 LLM（消耗 tool_error 预算）
+  ├─ 格式错误 → Rescue 解析提取结构化调用 → 继续校验
+  └─ 预算耗尽 → 抛出异常，Engine yield error event
+```
+
+---
+
+## 上下文管理
+
+SDK 内置上下文窗口管理器（`ContextManager`），支持 **可插拔的压缩策略**。
+
+### 压缩策略
+
+| 策略 | 说明 |
+|------|------|
+| `NoCompact` | 不压缩（调试用） |
+| `BasicCompact` | 默认策略 — 压缩长工具结果 + 消息截断 |
+| `TieredCompact` | 三阶段渐进压缩 — 适合长对话 |
+
+**TieredCompact 三阶段：**
+
+1. **Phase 1（轻度，≥75% 预算）** — 截断超过 2000 字符的工具结果
+2. **Phase 2（中度，≥85% 预算）** — 完全移除工具执行结果，保留工具调用
+3. **Phase 3（重度，≥95% 预算）** — 只保留系统提示 + 用户输入 + 最近 2 轮
+
+```typescript
+import { ContextManager, TieredCompact } from 'claude-code-minify'
+
+// 使用 TieredCompact 策略
+const ctx = new ContextManager(8000, undefined, new TieredCompact({
+  keepRecent: 2,                          // 保留最近 2 轮
+  phaseThresholds: [0.75, 0.85, 0.95],    // 三阶段触发阈值
+}))
+```
+
+### 上下文压缩配置（BasicCompact）
+
+通过 `context` 配置项调整 BasicCompact 策略的行为：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `compressionTriggerRatio` | 0.8 | 触发压缩的使用率 |
+| `compressionTargetRatio` | 0.6 | 压缩目标比例 |
+| `compressRecentRounds` | 6 | 保护最近 N 轮 |
+| `toolResultCompressThreshold` | 500 | 工具结果压缩阈值 |
+
+---
+
+## Eval 评估基准
+
+SDK 内置评估框架，用于量化 LLM 在工具调用场景下的表现。
+
+### 运行 Eval
+
+```bash
+# Mock Provider（不依赖真实 LLM）
+npm run eval -- --runs 3
+
+# 真实 LLM
+npx tsx src/eval/cli.ts \
+  --provider openai \
+  --api-key $OPENAI_API_KEY \
+  --model gpt-4o \
+  --runs 3 --verbose
+
+# 指定场景
+npx tsx src/eval/cli.ts --scenario single_tool_call --runs 5
+
+# JSONL 输出
+npx tsx src/eval/cli.ts --runs 3 --format jsonl --output eval_results.jsonl
+```
+
+### 预置场景（10 个）
+
+| 场景 | 类别 | 验证点 |
+|------|------|--------|
+| `single_tool_call` | plumbing | 正确选择并调用单个工具 |
+| `two_step_sequential` | plumbing | 依次调用两个工具 |
+| `correct_arguments` | plumbing | 参数值正确传递 |
+| `no_tool_needed` | plumbing | 简单问候不调用工具 |
+| `error_recovery` | resilience | 工具失败后重试 |
+| `multiple_tools` | multi-step | 一次调用多个工具 |
+| `data_extraction` | multi-step | 从文本提取信息 |
+| `conditional_logic` | multi-step | 根据条件选择工具 |
+| `long_context` | context | 多轮后仍能正确调用 |
+| `parallel_independent` | multi-step | 并行独立工具调用 |
+
+### 示例输出
+
+```
+╔═══════════════════════╦══════╦═════════╦═════════╦═════════╗
+║ Scenario              ║ Runs ║ Pass%   ║ AvgRnd  ║ AvgMs   ║
+╠═══════════════════════╬══════╬═════════╬═════════╬═════════╣
+║ single_tool_call      ║    3 ║ 100.0%  ║   1.0   ║     1ms ║
+║ two_step_sequential   ║    3 ║ 100.0%  ║   2.0   ║     1ms ║
+║ no_tool_needed        ║    3 ║ 100.0%  ║   0.0   ║     0ms ║
+╚═══════════════════════╩══════╩═══════╩═════════╩═════════╝
+```
+
+---
+
 ## 内置工具
 
 SDK 内置 8 个工具，AI 在对话过程中自动调用。`general` 模式下只注册 `file_read` 和 `ask_user`；`coding` 模式（默认）注册全部 8 个工具。可通过 `tools.disabled` 自定义。
@@ -1407,11 +1566,11 @@ sdk.setInstructions('从现在开始，所有回复使用英文。')
 
 ---
 
-## 上下文管理
+### 上下文管理详解
 
 SDK 内置上下文窗口管理器（`ContextManager`），自动在消息过长时进行裁剪。
 
-### 工作机制
+#### 工作机制
 
 上下文窗口大小由 `contextWindow` 配置项控制，可用上下文 = `contextWindow - maxTokens`。压缩行为可通过 `context` 配置项调整。
 
@@ -1424,7 +1583,7 @@ SDK 内置上下文窗口管理器（`ContextManager`），自动在消息过长
 | 工具结果压缩阈值 | 500 字符 | `context.toolResultCompressThreshold` | 超过此长度的结果被压缩 |
 | 最少保留 | 2 条消息 | — | 保证基本上下文 |
 
-### 两阶段裁剪策略
+#### 两阶段裁剪策略
 
 当估算 token 超过 80% 阈值时，按两阶段处理：
 
@@ -1435,7 +1594,7 @@ SDK 内置上下文窗口管理器（`ContextManager`），自动在消息过长
 
 **第二阶段：尾部保留** — 如果压缩后仍超标，从末尾保留消息直到 token 预算满足 60% 目标。
 
-### 上下文监控
+#### 上下文监控
 
 Engine 会在每轮工具调用时输出上下文使用日志：
 
@@ -1444,7 +1603,7 @@ Engine 会在每轮工具调用时输出上下文使用日志：
 [Context] API usage: input=12000 output=500 cumulative_input=35000 cumulative_output=1500
 ```
 
-### Token 估算方式
+#### Token 估算方式
 
 SDK 使用简单启发式估算，不依赖 tiktoken：
 
@@ -1643,6 +1802,55 @@ interface FileSecurityConfig {
   blockedPaths?: string[]
   maxFileSize?: number
 }
+```
+
+---
+
+## 项目结构
+
+```
+claude-code-minify/
+├── src/
+│   ├── index.ts              # SDK 入口，导出所有公开 API
+│   ├── core/
+│   │   ├── types.ts          # 类型定义
+│   │   ├── defaults.ts       # 默认配置常量
+│   │   ├── engine.ts         # 对话循环引擎
+│   │   ├── system-prompt.ts  # 系统提示词构建器
+│   │   └── message.ts        # 消息工具函数
+│   ├── guardrails/           # Guardrails 中间件
+│   │   ├── nudge.ts          # Nudge 数据结构
+│   │   ├── nudge-templates.ts # 纠错提示模板
+│   │   ├── error-tracker.ts  # 重试与错误预算跟踪
+│   │   ├── validator.ts      # 响应验证 + rescue 解析
+│   │   └── middleware.ts     # GuardrailsMiddleware 门面
+│   ├── context/              # 上下文管理（可插拔压缩策略）
+│   │   ├── strategy.ts       # CompactStrategy 接口 + 3 种实现
+│   │   └── manager.ts        # ContextManager
+│   ├── providers/
+│   │   ├── base.ts           # Provider 接口定义
+│   │   ├── openai.ts         # OpenAI 适配器
+│   │   └── anthropic.ts      # Anthropic 适配器
+│   ├── tools/                # 8 个内置工具
+│   │   ├── security.ts       # 共享安全检查
+│   │   └── ...               # 各工具独立文件
+│   ├── eval/                 # Eval 评估框架
+│   │   ├── types.ts          # 场景与指标类型
+│   │   ├── scenarios.ts      # 10 个预置场景
+│   │   ├── runner.ts         # EvalRunner 引擎
+│   │   ├── metrics.ts        # 指标聚合
+│   │   ├── report.ts         # ASCII 表格 & JSONL 报告
+│   │   └── cli.ts            # CLI 入口
+│   ├── skills/               # 技能系统
+│   ├── config/               # CLAUDE.md 加载器
+│   └── memory/               # 记忆系统
+├── docs/
+│   ├── README.zh-CN.md       # 完整中文文档
+│   └── decisions/            # 架构决策记录（ADR）
+├── tests/                    # 179 个测试（9 个文件）
+├── package.json              # 4 个运行时依赖
+├── tsconfig.json
+└── tsup.config.ts            # 双格式构建配置
 ```
 
 ---
@@ -1927,3 +2135,7 @@ chat()
 ```
 
 ---
+
+## License
+
+SEE LICENSE IN README.md

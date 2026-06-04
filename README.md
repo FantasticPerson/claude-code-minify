@@ -23,10 +23,13 @@
 ## Features
 
 - **Dual LLM Provider** — OpenAI Chat Completions (compatible with DeepSeek, Ollama, vLLM, LM Studio) and Anthropic Messages API
+- **Guardrails** — Response validation, rescue parsing for malformed tool calls, retry nudges, and error budget tracking to make tool-calling reliable
+- **Tiered Context Compression** — Three-phase progressive compression (NoCompact / BasicCompact / TieredCompact) as pluggable strategies
 - **8 Core Tools** — File read/write/edit, shell execution, content search, file search, etc.
 - **Skills System** — 6 built-in skills + custom skill extensions
 - **CLAUDE.md** — Auto-loads project-level instructions (also supports GEMINI.md, AGENTS.md, .cursorrules)
 - **Memory System** — Persistent user preferences and project context
+- **Eval Harness** — 10 preset scenarios, metrics collection, ASCII/JSONL reports, real LLM provider support
 - **Streaming** — Full SSE streaming event support via AsyncGenerator
 - **Minimal Dependencies** — Only **4** runtime dependencies (down from 305 in the original)
 - **Dual Format** — ESM (`import`) + CommonJS (`require`) with full TypeScript declarations
@@ -156,6 +159,21 @@ interface ContextConfig {
   compressRecentRounds?: number      // Protect recent N rounds, default 6
   toolResultCompressThreshold?: number // Compress tool results over this size, default 500
 }
+```
+
+The SDK now supports **pluggable compression strategies**. Three built-in strategies:
+
+| Strategy | Description |
+|----------|-------------|
+| `NoCompact` | No compression (debugging) |
+| `BasicCompact` | Default — same behavior as before (compress tool results + truncate) |
+| `TieredCompact` | Three-phase progressive compression for long conversations |
+
+```typescript
+import { TieredCompact } from 'claude-code-minify'
+
+// Use TieredCompact for long conversations
+const ctx = new ContextManager(8000, undefined, new TieredCompact({ keepRecent: 2 }))
 ```
 
 ### Tool Configuration
@@ -312,6 +330,34 @@ When `security` / `context` / `tools` are not configured, all tools operate with
 
 ## Core Features
 
+### Guardrails
+
+The Guardrails middleware wraps around the Engine's tool-calling loop to catch and recover from malformed LLM responses before they reach tool execution.
+
+**What it protects against:**
+- **Unknown tool names** — catches calls to non-existent tools and sends a corrective nudge
+- **Malformed arguments** — rejects non-object parameters and asks the model to fix them
+- **Malformed JSON in text** — rescue-parses tool calls embedded in markdown code blocks or other non-standard formats
+- **Retry exhaustion** — budgets retries (default 3) and tool errors (default 2) to prevent infinite loops
+
+```typescript
+import { ClaudeSDK } from 'claude-code-minify'
+
+const sdk = new ClaudeSDK({
+  provider: 'openai',
+  apiKey: 'sk-xxx',
+  model: 'gpt-4o',
+  workingDir: '.',
+  guardrails: {
+    maxRetries: 3,        // Max retry attempts for invalid responses
+    maxToolErrors: 2,     // Max consecutive tool errors before fatal
+    rescueEnabled: true,  // Enable rescue parsing (default: true)
+  },
+})
+```
+
+When `guardrails` is not configured, the middleware is disabled and the Engine behaves as before.
+
 ### CLAUDE.md Project Instructions
 
 Auto-loaded from (later entries override earlier):
@@ -361,8 +407,6 @@ sdk.registerTool({
   },
 })
 ```
-
-## Built-in Tools
 
 ## Built-in Tools
 
@@ -433,9 +477,17 @@ claude-code-minify/
 │   │   ├── types.ts          # Type definitions
 │   │   ├── defaults.ts       # Default configuration constants
 │   │   ├── engine.ts         # Conversation loop engine
-│   │   ├── context.ts        # Context window management
 │   │   ├── system-prompt.ts  # System prompt builder
 │   │   └── message.ts        # Message utilities
+│   ├── guardrails/           # Guardrails middleware
+│   │   ├── nudge.ts          # Nudge data structure
+│   │   ├── nudge-templates.ts # Corrective prompt templates
+│   │   ├── error-tracker.ts  # Retry & error budget tracking
+│   │   ├── validator.ts      # Response validation + rescue parsing
+│   │   └── middleware.ts     # GuardrailsMiddleware facade
+│   ├── context/              # Context management (pluggable strategies)
+│   │   ├── strategy.ts       # CompactStrategy interface + 3 implementations
+│   │   └── manager.ts        # ContextManager
 │   ├── providers/
 │   │   ├── base.ts           # Provider interface
 │   │   ├── openai.ts         # OpenAI adapter
@@ -443,12 +495,20 @@ claude-code-minify/
 │   ├── tools/                # 8 core tools
 │   │   ├── security.ts       # Shared security checks
 │   │   └── ...               # Individual tool files
+│   ├── eval/                 # Eval harness
+│   │   ├── types.ts          # Scenario & metric types
+│   │   ├── scenarios.ts      # 10 preset scenarios
+│   │   ├── runner.ts         # EvalRunner engine
+│   │   ├── metrics.ts        # Metrics aggregation
+│   │   ├── report.ts         # ASCII table & JSONL reports
+│   │   └── cli.ts            # CLI entry point
 │   ├── skills/               # Skills system
 │   ├── config/               # CLAUDE.md loader
 │   └── memory/               # Memory system
 ├── docs/
-│   └── README.zh-CN.md       # Full Chinese documentation
-├── tests/
+│   ├── README.zh-CN.md       # Full Chinese documentation
+│   └── decisions/            # Architecture Decision Records (ADRs)
+├── tests/                    # 179 tests (9 files)
 ├── package.json              # 4 runtime deps
 ├── tsconfig.json
 └── tsup.config.ts            # Dual-format build
@@ -458,8 +518,9 @@ claude-code-minify/
 
 ```bash
 npm run build    # Build ESM + CJS + types
-npm run test     # Run tests
+npm run test     # Run 179 tests
 npm run dev      # Development mode
+npm run eval     # Run eval harness (mock provider)
 ```
 
 ## Module Format
