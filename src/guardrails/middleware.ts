@@ -1,4 +1,4 @@
-import { ToolUseBlock } from '../core/types.js'
+import { ToolUseBlock, GuardrailsConfig } from '../core/types.js'
 import { Nudge, NudgeKind } from './nudge.js'
 import { ResponseValidator } from './validator.js'
 import { ErrorTracker } from './error-tracker.js'
@@ -10,12 +10,6 @@ export interface CheckResult {
   toolCalls?: ToolUseBlock[];
   nudge?: Nudge;
   reason?: string;
-}
-
-export interface GuardrailsConfig {
-  maxRetries?: number;       // default 3
-  maxToolErrors?: number;    // default 2
-  rescueEnabled?: boolean;   // default true
 }
 
 export class GuardrailsMiddleware {

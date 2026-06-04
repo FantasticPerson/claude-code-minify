@@ -25,6 +25,7 @@ export interface EngineOptions {
   guardrailsConfig?: GuardrailsConfig
   systemPromptOptions: SystemPromptOptions
   abortSignal?: AbortSignal
+  askUserCallback?: (question: string) => Promise<string>
   onText?: (text: string) => void
   onToolStart?: (name: string, params: any) => void
   onToolEnd?: (name: string, result: ToolResult) => void
@@ -44,6 +45,7 @@ export class Engine {
   private guardrails: GuardrailsMiddleware | null
   private sessionId: string
   private abortSignal?: AbortSignal
+  private askUserCallback?: (question: string) => Promise<string>
   private onText?: (text: string) => void
   private onToolStart?: (name: string, params: any) => void
   private onToolEnd?: (name: string, result: ToolResult) => void
@@ -67,6 +69,7 @@ export class Engine {
       : null
     this.sessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     this.abortSignal = options.abortSignal
+    this.askUserCallback = options.askUserCallback
     this.onText = options.onText
     this.onToolStart = options.onToolStart
     this.onToolEnd = options.onToolEnd
@@ -204,7 +207,7 @@ export class Engine {
         this.onToolStart?.(tu.name, tu.input)
         yield { type: 'tool_start', name: tu.name, params: tu.input }
 
-        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: this.sessionId, security: this.security, tools: this.toolsConfig }
+        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: this.sessionId, security: this.security, tools: this.toolsConfig, askUserCallback: this.askUserCallback }
         let result: ToolResult
         try {
           result = await tool.execute(tu.input, toolCtx)

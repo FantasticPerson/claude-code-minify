@@ -173,6 +173,7 @@ export interface ToolContext {
   security?: SecurityConfig
   tools?: ToolsConfig
   onProgress?: (msg: string) => void
+  askUserCallback?: (question: string) => Promise<string>
 }
 
 export interface ToolResult {

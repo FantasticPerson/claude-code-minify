@@ -5,7 +5,11 @@ export const askUserTool: ToolSpec = {
   name: 'ask_user',
   description: 'Ask the user a question and wait for their response.',
   schema: z.object({ question: z.string().describe('The question to ask') }),
-  execute: async (params) => {
+  execute: async (params, ctx) => {
+    if (ctx?.askUserCallback) {
+      const answer = await ctx.askUserCallback(params.question)
+      return { output: answer }
+    }
     return { output: params.question, metadata: { needsUserResponse: true } }
   },
 }
