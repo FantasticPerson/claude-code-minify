@@ -3,6 +3,9 @@ import { scenarios } from './scenarios.js'
 import { EvalRunner } from './runner.js'
 import { aggregateMetrics } from './metrics.js'
 import { printReport } from './report.js'
+import { OpenAIProvider } from '../providers/openai.js'
+import { AnthropicProvider } from '../providers/anthropic.js'
+import { LLMProvider } from '../providers/base.js'
 
 /**
  * Parse a CLI argument value from argv.
@@ -22,10 +25,26 @@ function hasFlag(args: string[], flag: string): boolean {
 }
 
 /**
+ * Create a real LLM provider from CLI args.
+ */
+function createProvider(provider: string, apiKey: string, baseURL?: string): LLMProvider {
+  switch (provider) {
+    case 'openai':
+      return new OpenAIProvider(baseURL || 'https://api.openai.com/v1', apiKey)
+    case 'anthropic':
+      return new AnthropicProvider(apiKey, baseURL)
+    default:
+      throw new Error(`Unknown provider: ${provider}. Supported: openai, anthropic`)
+  }
+}
+
+/**
  * Main CLI entry point.
  *
  * Usage:
  *   npx tsx src/eval/cli.ts --runs 3 --format table
+ *   npx tsx src/eval/cli.ts --provider anthropic --api-key $ANTHROPIC_API_KEY --runs 3
+ *   npx tsx src/eval/cli.ts --provider openai --api-key $OPENAI_API_KEY --base-url http://localhost:11434/v1 --runs 3
  *   npx tsx src/eval/cli.ts --runs 1 --format jsonl --output eval_results.jsonl
  *   npx tsx src/eval/cli.ts --scenario single_tool_call --runs 5 --verbose
  */
@@ -37,6 +56,10 @@ async function main(): Promise<void> {
   const output = getArg(args, '--output')
   const scenarioName = getArg(args, '--scenario')
   const verbose = hasFlag(args, '--verbose')
+  const providerName = getArg(args, '--provider')
+  const apiKey = getArg(args, '--api-key') || getArg(args, '--api_key')
+  const baseURL = getArg(args, '--base-url')
+  const model = getArg(args, '--model')
 
   const runs = runsStr ? parseInt(runsStr, 10) : 1
   if (isNaN(runs) || runs < 1) {
@@ -47,6 +70,18 @@ async function main(): Promise<void> {
   if (format && format !== 'table' && format !== 'jsonl' && format !== 'both') {
     console.error('Error: --format must be one of: table, jsonl, both')
     process.exit(1)
+  }
+
+  // Build real provider if --provider is specified
+  let provider: LLMProvider | undefined
+  if (providerName) {
+    if (!apiKey) {
+      console.error('Error: --api-key is required when using --provider')
+      console.error('Usage: --provider openai --api-key sk-...')
+      process.exit(1)
+    }
+    provider = createProvider(providerName, apiKey, baseURL)
+    console.log(`Using ${providerName} provider${baseURL ? ` (${baseURL})` : ''} model=${model || 'default'}`)
   }
 
   // Filter scenarios if --scenario is specified
@@ -75,7 +110,7 @@ async function main(): Promise<void> {
   const allResults: EvalRunResult[] = []
   for (const scenario of selectedScenarios) {
     for (let i = 0; i < runs; i++) {
-      const result = await runner.runOnce(scenario)
+      const result = await runner.runOnce(scenario, provider, model)
       allResults.push(result)
     }
   }

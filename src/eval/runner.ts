@@ -264,17 +264,17 @@ export class EvalRunner {
   /**
    * Run a single scenario once. If no provider is given, uses EvalMockProvider.
    */
-  async runOnce(scenario: EvalScenario, provider?: LLMProvider): Promise<EvalRunResult> {
+  async runOnce(scenario: EvalScenario, provider?: LLMProvider, model?: string): Promise<EvalRunResult> {
     const startTime = Date.now()
 
     try {
       const tools = scenarioToToolMap(scenario)
-      const mockProvider = provider ?? new EvalMockProvider(scenario)
+      const activeProvider = provider ?? new EvalMockProvider(scenario)
 
       const engineOptions: EngineOptions = {
-        provider: mockProvider,
+        provider: activeProvider,
         tools,
-        model: 'eval-mock-model',
+        model: model ?? 'eval-mock-model',
         maxTokens: 1024,
         maxToolRounds: scenario.maxRounds ?? 4,
         workingDir: '/tmp/eval',
