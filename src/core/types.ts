@@ -67,6 +67,7 @@ export interface UsageInfo {
 
 export type StreamEvent =
   | { type: 'text_delta'; text: string }
+  | { type: 'thinking_delta'; text: string }
   | { type: 'tool_use_start'; id: string; name: string }
   | { type: 'tool_use_delta'; input: string }
   | { type: 'tool_use_end'; id: string; name: string; input: Record<string, any> }

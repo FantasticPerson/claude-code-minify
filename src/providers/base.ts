@@ -16,13 +16,17 @@ export function estimateTokens(text: string): number {
   let cjk = 0
   let other = 0
 
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i)
+  for (const char of text) {
+    const code = char.codePointAt(0)!
     if (
-      (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified Ideographs
-      (code >= 0x3040 && code <= 0x30ff) || // Hiragana + Katakana
-      (code >= 0xac00 && code <= 0xd7af) || // Hangul
-      (code >= 0x3000 && code <= 0x303f)    // CJK punctuation
+      (code >= 0x4e00 && code <= 0x9fff) ||   // CJK Unified Ideographs
+      (code >= 0x3040 && code <= 0x30ff) ||   // Hiragana + Katakana
+      (code >= 0xac00 && code <= 0xd7af) ||   // Hangul
+      (code >= 0x3000 && code <= 0x303f) ||   // CJK punctuation
+      (code >= 0x20000 && code <= 0x2a6df) || // CJK Extension B
+      (code >= 0x2a700 && code <= 0x2b73f) || // CJK Extension C
+      (code >= 0x2b740 && code <= 0x2b81f) || // CJK Extension D
+      (code >= 0xf900 && code <= 0xfaff)      // CJK Compatibility Ideographs
     ) {
       cjk++
     } else if (code < 0x80) {

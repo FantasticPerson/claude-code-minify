@@ -4,4 +4,5 @@ export { ErrorTracker } from './error-tracker.js';
 export { ResponseValidator } from './validator.js';
 export type { ValidationResult } from './validator.js';
 export { GuardrailsMiddleware } from './middleware.js';
-export type { CheckAction, CheckResult, GuardrailsConfig } from './middleware.js';
+export type { CheckAction, CheckResult } from './middleware.js';
+export type { GuardrailsConfig } from '../core/types.js';

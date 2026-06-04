@@ -67,9 +67,10 @@ export class OpenAIProvider implements LLMProvider {
       if (delta.content) {
         yield { type: 'text_delta', text: delta.content }
       }
-      // 兑容智谱 GLM 等带 reasoning_content 的模型：作为独立 thinking 事件，不作为最终文本输出
-      if ((delta as any).reasoning_content) {
-        yield { type: 'thinking_delta' as any, text: (delta as any).reasoning_content }
+      // 兼容智谱 GLM 等带 reasoning_content 的模型：作为独立 thinking 事件，不作为最终文本输出
+      const reasoning = (delta as Record<string, unknown>).reasoning_content
+      if (typeof reasoning === 'string') {
+        yield { type: 'thinking_delta', text: reasoning }
       }
 
       if (delta.tool_calls) {
@@ -177,6 +178,10 @@ export class OpenAIProvider implements LLMProvider {
 
   private extractToolUses(message: OpenAI.ChatCompletionAssistantMessageParam): ToolUseBlock[] {
     if (!message.tool_calls) return []
-    return message.tool_calls.map(tc => ({ type: 'tool_use' as const, id: tc.id, name: tc.function.name, input: JSON.parse(tc.function.arguments || '{}') }))
+    return message.tool_calls.map(tc => {
+      let input: Record<string, any> = {}
+      try { input = JSON.parse(tc.function.arguments || '{}') } catch { input = {} }
+      return { type: 'tool_use' as const, id: tc.id, name: tc.function.name, input }
+    })
   }
 }

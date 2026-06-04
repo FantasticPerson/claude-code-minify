@@ -68,7 +68,8 @@ export class AnthropicProvider implements LLMProvider {
           yield { type: 'tool_use_end', id: buf.id, name: buf.name, input: parsed }
         }
       } else if (event.type === 'message_delta') {
-        if (event.usage) usage = { inputTokens: usage.inputTokens, outputTokens: event.usage.output_tokens ?? usage.outputTokens }
+        // message_delta 只包含 output_tokens，不覆盖 inputTokens
+        if (event.usage) usage.outputTokens = event.usage.output_tokens ?? usage.outputTokens
         if (event.delta?.stop_reason) stopReason = event.delta.stop_reason === 'tool_use' ? 'tool_use' : 'end_turn'
       } else if (event.type === 'message_start') {
         if (event.message?.usage) usage = { inputTokens: event.message.usage.input_tokens, outputTokens: event.message.usage.output_tokens }

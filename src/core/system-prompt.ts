@@ -35,7 +35,9 @@ export async function buildSystemPrompt(options: SystemPromptOptions): Promise<s
     if (memoryText) {
       parts.push(`# Memory\n\n${memoryText}`)
     }
-  } catch {}
+  } catch (err) {
+    console.error('[Memory] Failed to load memory:', err instanceof Error ? err.message : err)
+  }
 
   // 4. Active skill (if invoked)
   if (options.activeSkill) {
