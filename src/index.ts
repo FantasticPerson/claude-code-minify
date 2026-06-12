@@ -4,11 +4,12 @@ export type {
   EngineResult, EngineEvent, ToolResult, ToolContext, ToolRegistration, Skill, Memory,
   MemoryType, UsageInfo, StreamEvent, ChatParams, ChatResponse, ToolDefinition,
   ContextConfig, ToolsConfig, ToolBashConfig, ToolGrepConfig, ToolGlobConfig, ToolReadConfig, ToolWriteConfig, ToolEditConfig,
-  GuardrailsConfig,
+  GuardrailsConfig, DebugConfig, LogCategory,
 } from './core/types.js'
 
 // SDK
 import { ClaudeSDKConfig, EngineResult, EngineEvent, Skill, ToolRegistration } from './core/types.js'
+import { logger } from './core/logger.js'
 import { OpenAIProvider } from './providers/openai.js'
 import { AnthropicProvider } from './providers/anthropic.js'
 import { LLMProvider } from './providers/base.js'
@@ -25,6 +26,8 @@ export class ClaudeSDK {
   private activeSkill?: Skill
 
   constructor(config: ClaudeSDKConfig) {
+    logger.init(config.debug)
+
     this.config = {
       ...config,
       maxTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -149,6 +152,7 @@ export class Session {
 export { OpenAIProvider } from './providers/openai.js'
 export { AnthropicProvider } from './providers/anthropic.js'
 export { MemoryManager } from './memory/manager.js'
+export { logger } from './core/logger.js'
 export * as Defaults from './core/defaults.js'
 
 // Guardrails

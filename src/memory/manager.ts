@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { Memory, MemoryType } from '../core/types.js'
+import { logger } from '../core/logger.js'
 
 export class MemoryManager {
   private memoryDir: string
@@ -15,6 +16,7 @@ export class MemoryManager {
 
   async save(type: MemoryType, name: string, content: string): Promise<void> {
     await this.init()
+    logger.log('memory', 'saving', { type, name, contentLength: content.length })
     const filePath = this.getFilePath(type, name)
     await fs.mkdir(path.dirname(filePath), { recursive: true })
     await fs.writeFile(filePath, content, 'utf-8')
@@ -36,10 +38,11 @@ export class MemoryManager {
         }
       } catch (err) {
         if ((err as any).code !== 'ENOENT' && (err as any).code !== 'ENOTDIR') {
-          console.error(`[Memory] Failed to load from ${t}:`, (err as Error).message)
+          logger.error('memory', `failed to load from ${t}`, { error: (err as Error).message })
         }
       }
     }
+    logger.log('memory', 'loaded', { count: memories.length, types: types.join(','), names: memories.map(m => m.name) })
     return memories
   }
 

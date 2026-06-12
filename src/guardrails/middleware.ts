@@ -2,6 +2,7 @@ import { ToolUseBlock, GuardrailsConfig } from '../core/types.js'
 import { Nudge, NudgeKind } from './nudge.js'
 import { ResponseValidator } from './validator.js'
 import { ErrorTracker } from './error-tracker.js'
+import { logger } from '../core/logger.js'
 
 export type CheckAction = "execute" | "retry" | "tool_error" | "fatal";
 
@@ -30,6 +31,7 @@ export class GuardrailsMiddleware {
 
     if (validationResult.needsRetry) {
       const nudge = validationResult.nudge!;
+      logger.log('guardrails', 'validation failed, needs retry', { kind: nudge.kind, message: nudge.content.slice(0, 200) })
 
       // Record the error first, then check exhaustion
       if (
@@ -43,9 +45,11 @@ export class GuardrailsMiddleware {
 
       // Check if exhausted AFTER recording
       if (this.errorTracker.retriesExhausted) {
+        logger.error('guardrails', 'retries exhausted', { reason: 'Too many retries' })
         return { action: 'fatal', reason: 'Too many retries' };
       }
       if (this.errorTracker.toolErrorsExhausted) {
+        logger.error('guardrails', 'tool errors exhausted', { reason: 'Too many tool errors' })
         return { action: 'fatal', reason: 'Too many tool errors' };
       }
 

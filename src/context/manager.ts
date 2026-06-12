@@ -1,6 +1,7 @@
 import { Message, ContextConfig } from '../core/types.js'
 import { CompactStrategy, CompactResult, BasicCompact } from './strategy.js'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from '../core/defaults.js'
+import { logger } from '../core/logger.js'
 
 export class ContextManager {
   private messages: Message[] = []
@@ -33,11 +34,11 @@ export class ContextManager {
    * 返回 CompactResult（包含 phase 信息）
    */
   compressIfNeeded(realInputTokens: number): CompactResult {
-    // Delegate compression decision to the strategy
-    // The strategy uses its own configured trigger ratio
+    const before = this.messages.length
     const result = this.strategy.compact(this.messages, this.maxTokens)
     if (result.phase > 0) {
       this.messages = result.messages
+      logger.log('context', 'compressed', { phase: result.phase, before, after: this.messages.length, realInputTokens, maxTokens: this.maxTokens })
     }
     return result
   }

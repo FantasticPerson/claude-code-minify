@@ -31,6 +31,7 @@
 - **Memory System** — Persistent user preferences and project context
 - **Eval Harness** — 10 preset scenarios, metrics collection, ASCII/JSONL reports, real LLM provider support
 - **Streaming** — Full SSE streaming event support via AsyncGenerator
+- **Debug Logging** — Configurable category-based debug logging (engine, provider, tools, context, guardrails, memory, config, skills)
 - **Minimal Dependencies** — Only **4** runtime dependencies (down from 305 in the original)
 - **Dual Format** — ESM (`import`) + CommonJS (`require`) with full TypeScript declarations
 
@@ -145,6 +146,8 @@ interface ClaudeSDKConfig {
   security?: SecurityConfig          // Tool security policies
   context?: ContextConfig            // Context compression tuning
   tools?: ToolsConfig                // Tool behavior configuration
+  guardrails?: GuardrailsConfig      // Guardrails error protection
+  debug?: DebugConfig                // Debug logging configuration
 }
 ```
 
@@ -358,6 +361,47 @@ const sdk = new ClaudeSDK({
 
 When `guardrails` is not configured, the middleware is disabled and the Engine behaves as before.
 
+### Debug Logging
+
+Enable structured debug logging to trace SDK internals. Logs are tagged by category with timestamps.
+
+```typescript
+const sdk = new ClaudeSDK({
+  // ... required config
+  debug: {
+    enabled: true,                              // Enable debug output
+    categories: ['engine', 'tools', 'provider'], // Filter by category (omit for all)
+  }
+})
+```
+
+**Categories:**
+
+| Category | What it logs |
+|----------|-------------|
+| `engine` | Conversation rounds, context tracking, stream lifecycle |
+| `provider` | API requests, streaming events, token usage |
+| `tools` | Tool execution params, results, errors, timing |
+| `context` | Compression decisions, token estimation |
+| `guardrails` | Validation results, retries, exhaustion |
+| `memory` | Save/load operations |
+| `config` | CLAUDE.md file loading |
+| `skills` | Skill discovery and registration |
+
+**Example output:**
+
+```
+[09:04:12.345][engine] runStream() started { "promptLength": 42, "sessionId": "sess_m3k8a2_x9f1b2" }
+[09:04:12.346][config] CLAUDE.md loaded { "totalLength": 1234, "partCount": 3 }
+[09:04:12.347][provider] sending chat request { "model": "gpt-4o", "messageCount": 1, "maxTokens": 4096 }
+[09:04:13.891][provider] stream event: message_end { "usage": { "inputTokens": 2500, "outputTokens": 150 } }
+[09:04:13.892][context] round=0 msgs=1 est=2650 (msg=2500+sys=80+tools=70)
+[09:04:14.102][tools] executing file_write { "input": { "file_path": "/tmp/hello.ts", "content": "..." } }
+[09:04:14.115][tools] file_write done { "isError": false, "outputLength": 25 }
+```
+
+When `debug` is not configured or `enabled` is `false`, logging has near-zero overhead.
+
 ### CLAUDE.md Project Instructions
 
 Auto-loaded from (later entries override earlier):
@@ -476,6 +520,7 @@ claude-code-minify/
 │   ├── core/
 │   │   ├── types.ts          # Type definitions
 │   │   ├── defaults.ts       # Default configuration constants
+│   │   ├── logger.ts         # Debug logging (category-based)
 │   │   ├── engine.ts         # Conversation loop engine
 │   │   ├── system-prompt.ts  # System prompt builder
 │   │   └── message.ts        # Message utilities

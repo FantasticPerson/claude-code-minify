@@ -31,6 +31,7 @@
 | **记忆管理** | 自动记忆 | 手动 API 调用 |
 | **上下文管理** | 自动裁剪 | 自动裁剪 + **可插拔压缩策略**（NoCompact / BasicCompact / TieredCompact） |
 | **流式输出** | 终端渲染 | AsyncGenerator 事件流 |
+| **调试日志** | 内置基础日志 | **可配置的分类调试日志**（8 个分类，按需过滤） |
 | **自定义工具** | 通过插件/Agent | `registerTool()` API |
 | **自定义 Provider** | 不支持 | 支持实现 `LLMProvider` 接口 |
 | **插件系统** | 支持（Marketplace） | 不支持（用自定义工具替代） |
@@ -45,6 +46,7 @@
 - **CLAUDE.md 项目指令加载** — 完整的多文件加载、合并、优先级逻辑
 - **系统提示词构建** — 核心提示词 + 项目指令 + 记忆 + 技能 + 环境信息
 - **上下文窗口管理** — 自动估算 token 用量，超限时智能裁剪历史消息（支持可插拔压缩策略）
+- **调试日志系统** — 8 个分类的可配置调试日志，追踪 SDK 内部行为
 - **技能系统** — 6 个内置技能（brainstorming、debugging、tdd 等）
 
 ### 去掉了什么
@@ -112,6 +114,7 @@
   - [记忆管理](#记忆管理)
   - [CLAUDE.md 项目指令](#claudemd-项目指令)
 - [Guardrails 错误防护](#guardrails-错误防护)
+- [调试日志](#调试日志)
 - [上下文管理](#上下文管理)
 - [Eval 评估基准](#eval-评估基准)
 - [内置工具](#内置工具)
@@ -306,6 +309,9 @@ interface ClaudeSDKConfig {
 
   /** 用户交互回调函数，用于处理 ask_user 工具的提问 */
   askUserCallback?: (question: string) => Promise<string>
+
+  /** 调试日志配置 */
+  debug?: DebugConfig
 }
 ```
 
@@ -1160,6 +1166,70 @@ LLM 返回工具调用 → ResponseValidator 校验
 
 ---
 
+## 调试日志
+
+SDK 内置可配置的分类调试日志系统，可以追踪 Engine、Provider、工具执行、上下文管理、Guardrails 等模块的内部行为。
+
+### 基本用法
+
+```typescript
+const sdk = new ClaudeSDK({
+  // ... 必要配置
+  debug: {
+    enabled: true,                              // 开启调试日志
+    categories: ['engine', 'tools', 'provider'], // 只看这几个分类，不填则显示全部
+  }
+})
+```
+
+### DebugConfig 配置
+
+```typescript
+interface DebugConfig {
+  /** 是否开启调试日志，默认 false */
+  enabled?: boolean
+  /** 要显示的日志分类，不填则显示全部 */
+  categories?: LogCategory[]
+}
+
+type LogCategory = 'engine' | 'provider' | 'tools' | 'context' | 'guardrails' | 'memory' | 'config' | 'skills'
+```
+
+### 日志分类
+
+| 分类 | 记录内容 |
+|------|----------|
+| `engine` | 对话轮次、上下文追踪、流式生命周期 |
+| `provider` | API 请求、流式事件、token 用量 |
+| `tools` | 工具执行参数、结果、错误、耗时 |
+| `context` | 压缩决策、token 估算 |
+| `guardrails` | 校验结果、重试、预算耗尽 |
+| `memory` | 记忆的保存和加载 |
+| `config` | CLAUDE.md 文件加载过程 |
+| `skills` | 技能发现和注册 |
+
+### 示例输出
+
+```
+[09:04:12.345][engine] runStream() started { "promptLength": 42, "sessionId": "sess_m3k8a2_x9f1b2" }
+[09:04:12.346][config] CLAUDE.md loaded { "totalLength": 1234, "partCount": 3 }
+[09:04:12.347][provider] sending chat request { "model": "gpt-4o", "messageCount": 1, "maxTokens": 4096 }
+[09:04:13.891][provider] stream event: message_end { "usage": { "inputTokens": 2500, "outputTokens": 150 } }
+[09:04:13.892][context] round=0 msgs=1 est=2650 (msg=2500+sys=80+tools=70)
+[09:04:14.102][tools] executing file_write { "input": { "file_path": "/tmp/hello.ts", "content": "..." } }
+[09:04:14.115][tools] file_write done { "isError": false, "outputLength": 25 }
+```
+
+### 安全性
+
+日志中的敏感字段（`apiKey`、`token`、`password`、`secret`）会自动替换为 `[REDACTED]`，不会泄露到控制台输出。
+
+### 性能
+
+当 `debug` 未配置或 `enabled` 为 `false` 时，日志系统开销接近零。在高频流式场景（如 `text_delta` 事件）中，日志会被自动跳过，不影响性能。
+
+---
+
 ## 上下文管理
 
 SDK 内置上下文窗口管理器（`ContextManager`），支持 **可插拔的压缩策略**。
@@ -1815,6 +1885,7 @@ claude-code-minify/
 │   ├── core/
 │   │   ├── types.ts          # 类型定义
 │   │   ├── defaults.ts       # 默认配置常量
+│   │   ├── logger.ts         # 调试日志（分类过滤）
 │   │   ├── engine.ts         # 对话循环引擎
 │   │   ├── system-prompt.ts  # 系统提示词构建器
 │   │   └── message.ts        # 消息工具函数
@@ -1998,7 +2069,19 @@ sdk.registerTool({
 
 ### Q: 如何调试工具调用？
 
-使用流式输出可以实时观察工具调用过程：
+方式一：开启 debug 日志，查看完整的 SDK 内部行为：
+
+```typescript
+const sdk = new ClaudeSDK({
+  // ...
+  debug: {
+    enabled: true,
+    categories: ['engine', 'tools', 'provider'],
+  }
+})
+```
+
+方式二：使用流式输出实时观察工具调用过程：
 
 ```typescript
 for await (const event of sdk.chatStream('...')) {

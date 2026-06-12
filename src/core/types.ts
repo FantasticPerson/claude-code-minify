@@ -241,6 +241,15 @@ export interface GuardrailsConfig {
   rescueEnabled?: boolean;   // default true
 }
 
+// ============ Debug ============
+
+export type LogCategory = 'engine' | 'provider' | 'tools' | 'context' | 'guardrails' | 'memory' | 'config' | 'skills'
+
+export interface DebugConfig {
+  enabled?: boolean
+  categories?: LogCategory[]
+}
+
 // ============ Config ============
 
 export interface ClaudeSDKConfig {
@@ -263,4 +272,5 @@ export interface ClaudeSDKConfig {
   instructions?: string
   skillsDir?: string
   askUserCallback?: (question: string) => Promise<string>
+  debug?: DebugConfig
 }

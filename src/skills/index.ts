@@ -1,5 +1,6 @@
 import { Skill } from '../core/types.js'
 import { loadSkills, findMatchingSkills } from './loader.js'
+import { logger } from '../core/logger.js'
 
 const BUILTIN_SKILLS: Skill[] = [
   {
@@ -42,7 +43,9 @@ const BUILTIN_SKILLS: Skill[] = [
 
 export async function getAllSkills(customSkillsDir?: string): Promise<Skill[]> {
   const customSkills = await loadSkills(customSkillsDir)
-  return [...BUILTIN_SKILLS, ...customSkills]
+  const all = [...BUILTIN_SKILLS, ...customSkills]
+  logger.log('skills', 'skills loaded', { builtin: BUILTIN_SKILLS.length, custom: customSkills.length, total: all.length, names: all.map(s => s.name) })
+  return all
 }
 
 export { findMatchingSkills }

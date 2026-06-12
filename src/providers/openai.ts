@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { LLMProvider, estimateMessagesTokens } from './base.js'
 import { ChatParams, ChatResponse, StreamEvent, Message, ToolUseBlock, UsageInfo } from '../core/types.js'
+import { logger } from '../core/logger.js'
 
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
@@ -10,6 +11,7 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {
+    logger.log('provider', 'OpenAI chat() called', { model: params.model, messageCount: params.messages.length })
     const oaiMessages = this.convertMessages(params.system, params.messages)
     const tools = this.convertTools(params.tools)
 
@@ -40,6 +42,7 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async *chatStream(params: ChatParams): AsyncIterable<StreamEvent> {
+    logger.log('provider', 'OpenAI chatStream() started', { model: params.model, messageCount: params.messages.length, toolCount: params.tools.length })
     const oaiMessages = this.convertMessages(params.system, params.messages)
     const tools = this.convertTools(params.tools)
 
@@ -105,7 +108,7 @@ export class OpenAIProvider implements LLMProvider {
 
     for (const [, buf] of toolBuffers) {
       let parsed: Record<string, any> = {}
-      try { parsed = JSON.parse(buf.input) } catch { console.error('[OpenAI] Failed to parse tool input JSON for', buf.name) }
+      try { parsed = JSON.parse(buf.input) } catch { logger.error('provider', 'Failed to parse tool input JSON', { name: buf.name }) }
       yield { type: 'tool_use_end', id: buf.id, name: buf.name, input: parsed }
     }
 

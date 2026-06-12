@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { LLMProvider, estimateMessagesTokens } from './base.js'
 import { ChatParams, ChatResponse, StreamEvent, Message, UsageInfo } from '../core/types.js'
+import { logger } from '../core/logger.js'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -10,6 +11,7 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {
+    logger.log('provider', 'Anthropic chat() called', { model: params.model, messageCount: params.messages.length })
     const response = await this.client.messages.create({
       model: params.model,
       system: params.system.map(s => ({ type: 'text' as const, text: s.text })),
@@ -31,6 +33,7 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async *chatStream(params: ChatParams): AsyncIterable<StreamEvent> {
+    logger.log('provider', 'Anthropic chatStream() started', { model: params.model, messageCount: params.messages.length, toolCount: params.tools.length })
     const stream = this.client.messages.stream({
       model: params.model,
       system: params.system.map(s => ({ type: 'text' as const, text: s.text })),

@@ -10,6 +10,7 @@ import { ContextManager } from '../context/manager.js'
 import { GuardrailsMiddleware } from '../guardrails/middleware.js'
 import { userMessage, toolResultMessage } from './message.js'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from './defaults.js'
+import { logger } from './logger.js'
 
 export interface EngineOptions {
   provider: LLMProvider
@@ -76,6 +77,7 @@ export class Engine {
   }
 
   async run(prompt: string): Promise<EngineResult> {
+    logger.log('engine', 'run() called', { promptLength: prompt.length })
     const events: EngineEvent[] = []
     for await (const event of this.runStream(prompt)) {
       events.push(event)
@@ -90,10 +92,14 @@ export class Engine {
   }
 
   async *runStream(prompt: string): AsyncGenerator<EngineEvent> {
+    logger.log('engine', 'runStream() started', { promptLength: prompt.length, sessionId: this.sessionId })
+
     this.context.add(userMessage(prompt))
 
     const systemText = await buildSystemPrompt(this.systemPromptOptions)
     const toolDefs = Array.from(this.tools.values()).map(t => createToolDefinition(t))
+
+    logger.log('engine', 'system prompt built', { systemPromptLength: systemText.length, toolCount: toolDefs.length, tools: toolDefs.map(t => t.name) })
 
     let totalText = ''
     const toolCalls: { name: string; input: any; output: string; isError: boolean }[] = []
@@ -111,7 +117,7 @@ export class Engine {
       const sysTokens = estimateSystemPromptTokens([{ text: systemText }])
       const toolDefTokens = estimateToolDefsTokens(toolDefs)
       const estTokens = msgTokens + sysTokens + toolDefTokens
-      console.log(`[Context] round=${round} msgs=${messages.length} est=${estTokens}(msg=${msgTokens}+sys=${sysTokens}+tools=${toolDefTokens})`)
+      logger.log('context', `round=${round} msgs=${messages.length} est=${estTokens} (msg=${msgTokens}+sys=${sysTokens}+tools=${toolDefTokens})`)
 
       const params: ChatParams = {
         model: this.model,
@@ -121,11 +127,16 @@ export class Engine {
         maxTokens: this.maxTokens,
       }
 
+      logger.log('provider', 'sending chat request', { model: this.model, messageCount: messages.length, maxTokens: this.maxTokens })
+
       let responseText = ''
       const toolUses: ToolUseBlock[] = []
       let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 }
 
       for await (const event of this.provider.chatStream(params)) {
+        if (logger.isEnabled() && event.type !== 'text_delta' && event.type !== 'thinking_delta' && event.type !== 'tool_use_delta') {
+          logger.log('provider', `stream event: ${event.type}`, event.type === 'message_end' ? { usage: event.usage, stopReason: event.stopReason } : event.type === 'tool_use_end' ? { name: event.name, id: event.id } : undefined)
+        }
         switch (event.type) {
           case 'text_delta':
             responseText += event.text
@@ -149,7 +160,7 @@ export class Engine {
       totalUsage.inputTokens += usage.inputTokens
       totalUsage.outputTokens += usage.outputTokens
       if (usage.inputTokens > 0) {
-        console.log(`[Context] API usage: input=${usage.inputTokens} output=${usage.outputTokens} cumulative_input=${totalUsage.inputTokens} cumulative_output=${totalUsage.outputTokens}`)
+        logger.log('provider', 'API usage', { input: usage.inputTokens, output: usage.outputTokens, cumulativeInput: totalUsage.inputTokens, cumulativeOutput: totalUsage.outputTokens })
       }
 
       // Use real token usage to decide compression — much more accurate than estimation
@@ -157,7 +168,9 @@ export class Engine {
 
       // Guardrails: validate tool calls before execution
       if (this.guardrails && toolUses.length > 0) {
+        logger.log('guardrails', 'checking tool calls', { toolCount: toolUses.length, toolNames: toolUses.map(t => t.name) })
         const checkResult = this.guardrails.check(toolUses, responseText || undefined)
+        logger.log('guardrails', `action: ${checkResult.action}`, { reason: checkResult.reason })
 
         if (checkResult.action === 'fatal') {
           // Add assistant message + error tool results to keep message sequence complete
@@ -196,6 +209,7 @@ export class Engine {
       if (toolUses.length === 0) {
         totalText += responseText
         this.context.add({ role: 'assistant', content: [{ type: 'text', text: responseText }] })
+        logger.log('engine', 'no tool calls, finishing', { responseLength: responseText.length })
         break
       }
 
@@ -219,13 +233,18 @@ export class Engine {
         this.onToolStart?.(tu.name, tu.input)
         yield { type: 'tool_start', name: tu.name, params: tu.input }
 
+        logger.log('tools', `executing ${tu.name}`, { input: tu.input })
+
         const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: this.sessionId, security: this.security, tools: this.toolsConfig, askUserCallback: this.askUserCallback }
         let result: ToolResult
         try {
           result = await tool.execute(tu.input, toolCtx)
         } catch (err: any) {
           result = { output: `Tool execution error: ${err.message}`, isError: true }
+          logger.error('tools', `${tu.name} threw`, { error: err.message })
         }
+
+        logger.log('tools', `${tu.name} done`, { isError: result.isError, outputLength: result.output.length, metadata: result.metadata })
 
         this.onToolEnd?.(tu.name, result)
         yield { type: 'tool_end', name: tu.name, result }
