@@ -31,6 +31,7 @@
 - **Memory System** — Persistent user preferences and project context
 - **Eval Harness** — 10 preset scenarios, metrics collection, ASCII/JSONL reports, real LLM provider support
 - **Streaming** — Full SSE streaming event support via AsyncGenerator
+- **Interruptible** — Abort in-flight turns via `AbortSignal` (passed to `chat`/`chatStream`) or `Session.abort()`; the signal propagates to the provider to drop the HTTP connection and kills the whole `bash` process tree
 - **Debug Logging** — Configurable category-based debug logging (engine, provider, tools, context, guardrails, memory, config, skills)
 - **Minimal Dependencies** — Only **4** runtime dependencies (down from 305 in the original)
 - **Dual Format** — ESM (`import`) + CommonJS (`require`) with full TypeScript declarations
@@ -125,6 +126,26 @@ await session.chat('Add Express routes and controllers')
 await session.chat('Write test cases')
 
 session.reset()  // Clear context
+```
+
+### Interruption
+
+Abort an in-flight turn two ways. The signal propagates down to the provider (dropping the streaming HTTP connection) and to running tools — the `bash` tool kills its whole process tree. Already-generated text and completed tool calls are preserved.
+
+```typescript
+// 1) Pass an AbortSignal to chat / chatStream
+const controller = new AbortController()
+const result = await sdk.chat('Long-running task', { signal: controller.signal })
+// result.interrupted === true if the turn was aborted
+
+// 2) Command-style abort on a persistent Session
+const session = sdk.createSession()
+for await (const event of session.chatStream('Generate a lot of code')) {
+  if (shouldStop()) session.abort()   // interrupts now, resets for the next turn
+  if (event.type === 'interrupted') {
+    console.log('Stopped. Partial text:', event.partialText)
+  }
+}
 ```
 
 ## Configuration
@@ -473,8 +494,8 @@ sdk.registerTool({
 
 | Method | Returns |
 |--------|---------|
-| `chat(prompt)` | `Promise<EngineResult>` |
-| `chatStream(prompt)` | `AsyncGenerator<EngineEvent>` |
+| `chat(prompt, options?)` | `Promise<EngineResult>` |
+| `chatStream(prompt, options?)` | `AsyncGenerator<EngineEvent>` |
 | `createSession()` | `Session` |
 | `loadClaudeMD()` | `Promise<string>` |
 | `setInstructions(text)` | `void` |
@@ -488,6 +509,8 @@ sdk.registerTool({
 |--------|-------------|
 | `chat(prompt)` | Chat with context persistence |
 | `chatStream(prompt)` | Streaming chat |
+| `abort()` | Abort the in-flight turn, then reset for the next one |
+| `signal` | `AbortSignal` governing the current turn (readonly) |
 | `reset()` | Clear conversation history |
 
 ### `EngineResult`
@@ -498,6 +521,7 @@ sdk.registerTool({
   toolCalls: ToolCallRecord[]  // All tool invocations
   filesWritten: string[]    // Files created/modified
   usage: { inputTokens: number; outputTokens: number }
+  interrupted?: boolean     // True if the turn was aborted
 }
 ```
 
@@ -509,6 +533,7 @@ sdk.registerTool({
 | `tool_start` | `name, params` | Tool execution started |
 | `tool_end` | `name, result` | Tool execution completed |
 | `error` | `error: Error` | Error occurred |
+| `interrupted` | `partialText, completedToolCalls, filesWritten, usage` | Turn aborted; partial results preserved |
 | `complete` | `result: EngineResult` | Conversation complete |
 
 ## Project Structure

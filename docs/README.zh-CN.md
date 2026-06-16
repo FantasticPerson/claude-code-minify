@@ -109,6 +109,7 @@
   - [ClaudeSDK 类](#claudesdk-类)
   - [Session 类](#session-类)
   - [流式输出](#流式输出)
+  - [会话中断](#会话中断)
   - [自定义工具](#自定义工具)
   - [技能系统](#技能系统)
   - [记忆管理](#记忆管理)
@@ -583,6 +584,9 @@ const sdk = new ClaudeSDK(config: ClaudeSDKConfig)
 
 ```typescript
 const result: EngineResult = await sdk.chat('帮我创建一个 REST API 项目')
+
+// 第二个可选参数 options 可传入 AbortSignal，用于中断本轮（见「会话中断」）
+const result2 = await sdk.chat('长任务', { signal: controller.signal })
 ```
 
 返回值结构：
@@ -597,6 +601,8 @@ interface EngineResult {
   filesWritten: string[]
   /** Token 使用统计 */
   usage: UsageInfo
+  /** 本轮是否被中断（true 表示因 AbortSignal 而中止） */
+  interrupted?: boolean
 }
 
 interface ToolCallRecord {
@@ -720,6 +726,12 @@ class Session {
   /** 流式发送消息 */
   chatStream(prompt: string): AsyncGenerator<EngineEvent>
 
+  /** 中断当前进行中的对话轮次，并重建控制器以便下一轮正常使用 */
+  abort(): void
+
+  /** 当前轮次使用的 AbortSignal（只读） */
+  get signal(): AbortSignal
+
   /** 重置会话，清除所有消息历史 */
   reset(): void
 }
@@ -791,8 +803,35 @@ type EngineEvent =
   | { type: 'tool_start'; name: string; params: any } // 工具开始执行
   | { type: 'tool_end'; name: string; result: ToolResult } // 工具执行完成
   | { type: 'error'; error: Error }                  // 发生错误
+  | { type: 'interrupted'; partialText: string; completedToolCalls: ToolCallRecord[]; filesWritten: string[]; usage: UsageInfo } // 对话被中断，保留已生成内容
   | { type: 'complete'; result: EngineResult }        // 对话完成
 ```
+
+---
+
+### 会话中断
+
+通过 `AbortSignal` 中断进行中的对话轮次。信号会一路透传到 Provider（断开流式 HTTP 连接），并传递给正在执行的工具——`bash` 工具会杀掉整个进程树。已生成的文本和已完成的工具调用都会保留。
+
+两种中断方式：
+
+```typescript
+// 方式一：向 chat / chatStream 传入 AbortSignal
+const controller = new AbortController()
+const result = await sdk.chat('长任务', { signal: controller.signal })
+// 若被中断，result.interrupted === true
+
+// 方式二：在持久会话上命令式中断
+const session = sdk.createSession()
+for await (const event of session.chatStream('生成大量代码')) {
+  if (shouldStop()) session.abort()   // 立即中断当前轮，并复位以便下一轮正常使用
+  if (event.type === 'interrupted') {
+    console.log('已停止，已生成内容：', event.partialText)
+  }
+}
+```
+
+> 中断后，`interrupted` 事件携带 `partialText`（已生成文本）、`completedToolCalls`（已完成的工具调用）、`filesWritten`、`usage`。`Session.abort()` 会中断当前轮并重建控制器，确保下一轮对话不受影响。
 
 ---
 
@@ -833,6 +872,9 @@ interface ToolContext {
 
   /** 工具行为配置 */
   tools?: ToolsConfig
+
+  /** 中断信号（可选），长耗时工具应检查它以及时中止 */
+  abortSignal?: AbortSignal
 
   /** 进度回调（可选） */
   onProgress?: (msg: string) => void
@@ -1731,6 +1773,7 @@ interface EngineResult {
   toolCalls: ToolCallRecord[]  // 工具调用记录
   filesWritten: string[]    // 写入的文件路径
   usage: UsageInfo          // Token 使用量
+  interrupted?: boolean     // 本轮是否被中断
 }
 
 /** 工具调用记录 */
@@ -1757,6 +1800,7 @@ type EngineEvent =
   | { type: 'tool_start'; name: string; params: any }
   | { type: 'tool_end'; name: string; result: ToolResult }
   | { type: 'error'; error: Error }
+  | { type: 'interrupted'; partialText: string; completedToolCalls: ToolCallRecord[]; filesWritten: string[]; usage: UsageInfo }
   | { type: 'complete'; result: EngineResult }
 
 /** Provider 原始流事件 */
@@ -1776,6 +1820,7 @@ interface ToolContext {
   workingDir: string
   sessionId: string
   security?: SecurityConfig
+  abortSignal?: AbortSignal   // 中断信号，长耗时工具应响应它
   onProgress?: (msg: string) => void
 }
 
@@ -1832,6 +1877,14 @@ interface ChatParams {
   tools: ToolDefinition[]
   maxTokens: number
   temperature?: number
+  /** 用于中断本轮请求的 AbortSignal，透传到底层 HTTP 客户端 */
+  signal?: AbortSignal
+}
+
+/** chat / chatStream 的可选参数 */
+interface ChatOptions {
+  /** 用于中断本轮对话的 AbortSignal */
+  signal?: AbortSignal
 }
 
 /** 聊天响应（Provider 层） */
@@ -2010,7 +2063,19 @@ const sdk = new ClaudeSDK({
 
 ### Q: 如何取消正在进行的对话？
 
-当前版本的 Engine 支持 `AbortSignal`（内部接口）。可以通过 Session 的 `reset()` 方法提前终止。
+两种方式：
+
+```typescript
+// 方式一：向 chat / chatStream 传入 AbortSignal
+const controller = new AbortController()
+const result = await sdk.chat('任务', { signal: controller.signal })
+
+// 方式二：在 Session 上命令式中断
+const session = sdk.createSession()
+session.abort()   // 中断当前轮，自动复位供下一轮使用
+```
+
+中断后 `result.interrupted` 为 `true`（流式则产出 `interrupted` 事件），已生成内容会保留。详见[会话中断](#会话中断)。
 
 ### Q: 输出被截断了怎么办？
 
