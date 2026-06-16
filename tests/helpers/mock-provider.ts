@@ -9,12 +9,14 @@ export interface MockResponse {
 
 export class MockProvider implements LLMProvider {
   private responses: MockResponse[]
+  private delayMs: number
 
   callCount = 0
   lastParams: ChatParams | null = null
 
-  constructor(responses: MockResponse[]) {
+  constructor(responses: MockResponse[], delayMs = 0) {
     this.responses = responses
+    this.delayMs = delayMs
   }
 
   async *chatStream(params: ChatParams): AsyncGenerator<StreamEvent> {
@@ -31,20 +33,30 @@ export class MockProvider implements LLMProvider {
       return
     }
 
-    // Yield text deltas
+    const delay = () => new Promise<void>(r => setTimeout(r, this.delayMs))
+
+    // Yield text deltas (check signal before each, delay to let abort land mid-stream)
     if (response.text) {
+      if (params.signal?.aborted) return
+      await delay()
       yield { type: 'text_delta', text: response.text }
     }
 
     // Yield tool use events
     if (response.toolUses) {
       for (const tu of response.toolUses) {
+        if (params.signal?.aborted) return
+        await delay()
         yield { type: 'tool_use_start', id: tu.id, name: tu.name }
+        if (params.signal?.aborted) return
+        await delay()
         yield { type: 'tool_use_end', id: tu.id, name: tu.name, input: tu.input }
       }
     }
 
     // Always end with message_end
+    if (params.signal?.aborted) return
+    await delay()
     yield {
       type: 'message_end',
       usage: response.usage ?? { inputTokens: 100, outputTokens: 50 },

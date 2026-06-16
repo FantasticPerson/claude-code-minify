@@ -3,8 +3,8 @@ import { Engine, EngineOptions } from '../src/core/engine.js'
 import { createBuiltinTools } from '../src/tools/index.js'
 import { MockProvider, MockResponse } from './helpers/mock-provider.js'
 
-function createTestEngine(responses: MockResponse[], options?: Partial<EngineOptions>): Engine {
-  const provider = new MockProvider(responses)
+function createTestEngine(responses: MockResponse[], options?: Partial<EngineOptions>, delayMs = 0): Engine {
+  const provider = new MockProvider(responses, delayMs)
   const tools = createBuiltinTools([])
   return new Engine({
     provider: provider as any,
@@ -263,6 +263,74 @@ describe('Engine: stream event ordering', () => {
 
       // Complete should be last
       expect(types[types.length - 1]).toBe('complete')
+    } finally {
+      fs.unlinkSync(tmpFile)
+    }
+  })
+})
+
+// ============================================================================
+// 8. Interrupt mid-stream
+// ============================================================================
+
+describe('Engine: interrupt mid-stream', () => {
+  it('yields interrupted with partialText when aborted during streaming', async () => {
+    const controller = new AbortController()
+    const engine = createTestEngine(
+      [{ text: 'Hello world this is a long response' }],
+      {},
+      5,
+    )
+
+    const events: any[] = []
+    for await (const event of engine.runStream('test', controller.signal)) {
+      events.push(event)
+      // Abort right after the first text chunk lands
+      if (event.type === 'text') controller.abort()
+    }
+
+    const interrupted = events.find(e => e.type === 'interrupted')
+    expect(interrupted).toBeDefined()
+    expect(interrupted.partialText).toContain('Hello world')
+
+    const complete = events.find(e => e.type === 'complete')
+    expect(complete).toBeUndefined()
+  })
+})
+
+// ============================================================================
+// 9. Interrupt before next tool execution
+// ============================================================================
+
+describe('Engine: interrupt before next tool', () => {
+  it('keeps completed tool calls and yields interrupted', async () => {
+    const tmpFile = '/tmp/test-engine-interrupt-tool.txt'
+    const fs = await import('fs')
+    fs.writeFileSync(tmpFile, 'content')
+
+    try {
+      const controller = new AbortController()
+      // Two tool calls; abort after the first completes, before the second runs
+      const engine = createTestEngine([{
+        toolUses: [
+          { id: 'tu_1', name: 'file_read', input: { file_path: tmpFile } },
+          { id: 'tu_2', name: 'file_read', input: { file_path: tmpFile } },
+        ],
+      }])
+
+      const events: any[] = []
+      for await (const event of engine.runStream('test', controller.signal)) {
+        events.push(event)
+        if (event.type === 'tool_end') controller.abort()
+      }
+
+      const interrupted = events.find(e => e.type === 'interrupted')
+      expect(interrupted).toBeDefined()
+      expect(interrupted.completedToolCalls).toHaveLength(1)
+      expect(interrupted.completedToolCalls[0].name).toBe('file_read')
+
+      const complete = events.find(e => e.type === 'complete')
+      expect(complete).toBeUndefined()
     } finally {
       fs.unlinkSync(tmpFile)
     }

@@ -120,9 +120,17 @@ export class Engine {
     const filesWritten: string[] = []
     let totalUsage: UsageInfo = { inputTokens: 0, outputTokens: 0 }
 
+    const makeInterrupted = (): EngineEvent => ({
+      type: 'interrupted',
+      partialText: totalText,
+      completedToolCalls: toolCalls,
+      filesWritten,
+      usage: totalUsage,
+    })
+
     for (let round = 0; round < this.maxToolRounds; round++) {
       if (sig?.aborted) {
-        yield { type: 'interrupted', partialText: totalText, completedToolCalls: toolCalls, filesWritten, usage: totalUsage }
+        yield makeInterrupted()
         return
       }
 
@@ -139,6 +147,7 @@ export class Engine {
         messages,
         tools: toolDefs,
         maxTokens: this.maxTokens,
+        signal: sig,
       }
 
       logger.log('provider', 'sending chat request', { model: this.model, messageCount: messages.length, maxTokens: this.maxTokens })
@@ -148,6 +157,7 @@ export class Engine {
       let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 }
 
       for await (const event of this.provider.chatStream(params)) {
+        if (sig?.aborted) break
         if (logger.isEnabled() && event.type !== 'text_delta' && event.type !== 'thinking_delta' && event.type !== 'tool_use_delta') {
           logger.log('provider', `stream event: ${event.type}`, event.type === 'message_end' ? { usage: event.usage, stopReason: event.stopReason } : event.type === 'tool_use_end' ? { name: event.name, id: event.id } : undefined)
         }
@@ -169,6 +179,12 @@ export class Engine {
             usage = event.usage
             break
         }
+      }
+
+      totalText += responseText
+      if (sig?.aborted) {
+        yield makeInterrupted()
+        return
       }
 
       totalUsage.inputTokens += usage.inputTokens
@@ -221,7 +237,6 @@ export class Engine {
       }
 
       if (toolUses.length === 0) {
-        totalText += responseText
         this.context.add({ role: 'assistant', content: [{ type: 'text', text: responseText }] })
         logger.log('engine', 'no tool calls, finishing', { responseLength: responseText.length })
         break
@@ -232,11 +247,14 @@ export class Engine {
       if (responseText) assistantContent.push({ type: 'text', text: responseText })
       assistantContent.push(...toolUses)
       this.context.add({ role: 'assistant', content: assistantContent })
-      totalText += responseText
 
       // Execute tools
       const results: ToolResultBlock[] = []
       for (const tu of toolUses) {
+        if (sig?.aborted) {
+          yield makeInterrupted()
+          return
+        }
         const tool = this.tools.get(tu.name)
         if (!tool) {
           results.push({ type: 'tool_result', toolUseId: tu.id, content: `Error: Unknown tool '${tu.name}'`, isError: true })
@@ -249,7 +267,7 @@ export class Engine {
 
         logger.log('tools', `executing ${tu.name}`, { input: tu.input })
 
-        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: this.sessionId, security: this.security, tools: this.toolsConfig, askUserCallback: this.askUserCallback }
+        const toolCtx: ToolContext = { workingDir: this.workingDir, sessionId: this.sessionId, security: this.security, tools: this.toolsConfig, askUserCallback: this.askUserCallback, abortSignal: sig }
         let result: ToolResult
         try {
           result = await tool.execute(tu.input, toolCtx)
