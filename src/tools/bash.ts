@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { ToolSpec } from './base.js'
-import { spawn } from 'child_process'
+import { spawn, execSync } from 'child_process'
 import path from 'path'
 import { DEFAULT_BASH_TIMEOUT, DEFAULT_BASH_MAX_TIMEOUT, DEFAULT_BASH_MAX_BUFFER, DEFAULT_BASH_TRUNCATE_LIMIT } from '../core/defaults.js'
 
@@ -78,8 +78,14 @@ export const bashTool: ToolSpec = {
       let resolved = false
 
       const killTree = (signal: NodeJS.Signals = 'SIGTERM') => {
+        if (!child.pid) return
         try {
-          if (child.pid) process.kill(-child.pid, signal)
+          if (process.platform === 'win32') {
+            // Windows 没有 POSIX 进程组：taskkill /T 终止整个进程树，/F 强制结束
+            execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore' })
+          } else {
+            process.kill(-child.pid, signal)
+          }
         } catch {}
       }
       const onAbort = () => {
@@ -117,14 +123,14 @@ export const bashTool: ToolSpec = {
       ctx.abortSignal?.addEventListener('abort', onAbort)
       child.stdout.on('data', (d: Buffer) => {
         stdout += d.toString()
-        if (stdout.length + stderr.length > maxBuffer) {
+        if (stdout.length > maxBuffer) {
           bufferOverflow = true
           killTree('SIGKILL')
         }
       })
       child.stderr.on('data', (d: Buffer) => {
         stderr += d.toString()
-        if (stdout.length + stderr.length > maxBuffer) {
+        if (stderr.length > maxBuffer) {
           bufferOverflow = true
           killTree('SIGKILL')
         }

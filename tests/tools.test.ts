@@ -114,6 +114,19 @@ describe('bash tool', () => {
     }
     expect(leftover).toBe(0)
   }, 8000)
+
+  it('maxBuffer applies per-stream (stdout/stderr independent), not combined', async () => {
+    // Each stream stays under maxBuffer, but combined exceeds it.
+    // Per-stream semantics (matching the original exec) → no overflow, command completes.
+    const cmd = "node -e \"process.stdout.write('a'.repeat(600)); process.stderr.write('b'.repeat(600))\""
+    const result = await bashTool.execute(
+      { command: cmd },
+      ctx({ tools: { bash: { maxBuffer: 1000 } } }),
+    )
+    expect(result.isError).toBe(false)
+    expect(result.output).toContain('a')
+    expect(result.output).not.toContain('[output limit exceeded]')
+  }, 10000)
 })
 
 // ============================================================================
