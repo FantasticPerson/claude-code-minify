@@ -336,3 +336,72 @@ describe('Engine: interrupt before next tool', () => {
     }
   })
 })
+
+// ============================================================================
+// 10. Interrupted turn keeps the context message sequence legal
+// ============================================================================
+
+describe('Engine: interrupted context consistency', () => {
+  it('checkpoint ③ pairs every tool_use with a tool_result after interrupting between tools', async () => {
+    const tmpFile = '/tmp/test-engine-ctx-seq.txt'
+    const fs = await import('fs')
+    fs.writeFileSync(tmpFile, 'content')
+    try {
+      const controller = new AbortController()
+      // Round 1: two tool calls, abort after the first completes (before the second)
+      // Round 2: plain text so the provider is called again with the post-interrupt context
+      const engine = createTestEngine([
+        {
+          toolUses: [
+            { id: 'tu_1', name: 'file_read', input: { file_path: tmpFile } },
+            { id: 'tu_2', name: 'file_read', input: { file_path: tmpFile } },
+          ],
+        },
+        { text: 'ok' },
+      ])
+
+      for await (const event of engine.runStream('round1', controller.signal)) {
+        if (event.type === 'tool_end') controller.abort()
+      }
+      // Second turn drives a provider call that reveals the persisted context
+      await collectEvents(engine.runStream('round2'))
+
+      const messages = (engine['provider'] as MockProvider).lastParams!.messages
+      const toolUseIds: string[] = []
+      const toolResultIds: string[] = []
+      for (const m of messages) {
+        for (const b of m.content) {
+          if (b.type === 'tool_use') toolUseIds.push(b.id)
+          if (b.type === 'tool_result') toolResultIds.push(b.toolUseId)
+        }
+      }
+      // Every tool_use must have a matching tool_result, else Anthropic rejects the request
+      expect(toolUseIds.sort()).toEqual(toolResultIds.sort())
+      expect(toolUseIds).toEqual(expect.arrayContaining(['tu_1', 'tu_2']))
+    } finally {
+      fs.unlinkSync(tmpFile)
+    }
+  })
+
+  it('checkpoint ② persists partial assistant text so roles still alternate', async () => {
+    const controller = new AbortController()
+    const engine = createTestEngine(
+      [{ text: 'Hello partial text' }, { text: 'ok' }],
+      {},
+      5,
+    )
+    for await (const event of engine.runStream('round1', controller.signal)) {
+      if (event.type === 'text') controller.abort()
+    }
+    await collectEvents(engine.runStream('round2'))
+
+    const messages = (engine['provider'] as MockProvider).lastParams!.messages
+    const roles = messages.map((m: any) => m.role)
+    for (let i = 1; i < roles.length; i++) {
+      expect(roles[i]).not.toBe(roles[i - 1])
+    }
+    const asst = messages.find((m: any) => m.role === 'assistant')
+    expect(asst).toBeDefined()
+    expect(JSON.stringify(asst.content)).toContain('Hello partial text')
+  })
+})

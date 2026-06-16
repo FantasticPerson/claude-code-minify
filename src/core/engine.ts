@@ -183,6 +183,22 @@ export class Engine {
 
       totalText += responseText
       if (sig?.aborted) {
+        // Persist the partial assistant turn so the context stays a legal,
+        // alternating message sequence (and the model keeps what it generated).
+        if (responseText || toolUses.length > 0) {
+          const content: (import('./types.js').TextBlock | ToolUseBlock)[] = []
+          if (responseText) content.push({ type: 'text', text: responseText })
+          content.push(...toolUses)
+          this.context.add({ role: 'assistant', content })
+          if (toolUses.length > 0) {
+            this.context.add(toolResultMessage(toolUses.map(tu => ({
+              type: 'tool_result' as const,
+              toolUseId: tu.id,
+              content: 'Error: interrupted before execution',
+              isError: true,
+            }))))
+          }
+        }
         yield makeInterrupted()
         return
       }
@@ -252,6 +268,19 @@ export class Engine {
       const results: ToolResultBlock[] = []
       for (const tu of toolUses) {
         if (sig?.aborted) {
+          // Pair every tool_use in this turn with a tool_result so the context
+          // stays legal: real results for executed tools, an error placeholder
+          // for the rest (otherwise Anthropic rejects the next request).
+          const interruptedResults: ToolResultBlock[] = [...results]
+          for (const remaining of toolUses.slice(results.length)) {
+            interruptedResults.push({
+              type: 'tool_result',
+              toolUseId: remaining.id,
+              content: 'Error: interrupted before execution',
+              isError: true,
+            })
+          }
+          this.context.add(toolResultMessage(interruptedResults))
           yield makeInterrupted()
           return
         }
