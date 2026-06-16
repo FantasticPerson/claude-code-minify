@@ -2,13 +2,13 @@
 export type {
   ClaudeSDKConfig, Message, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock,
   EngineResult, EngineEvent, ToolResult, ToolContext, ToolRegistration, Skill, Memory,
-  MemoryType, UsageInfo, StreamEvent, ChatParams, ChatResponse, ToolDefinition,
+  MemoryType, UsageInfo, StreamEvent, ChatParams, ChatResponse, ChatOptions, ToolDefinition,
   ContextConfig, ToolsConfig, ToolBashConfig, ToolGrepConfig, ToolGlobConfig, ToolReadConfig, ToolWriteConfig, ToolEditConfig,
   GuardrailsConfig, DebugConfig, LogCategory,
 } from './core/types.js'
 
 // SDK
-import { ClaudeSDKConfig, EngineResult, EngineEvent, Skill, ToolRegistration } from './core/types.js'
+import { ClaudeSDKConfig, EngineResult, EngineEvent, Skill, ToolRegistration, ChatOptions } from './core/types.js'
 import { logger } from './core/logger.js'
 import { OpenAIProvider } from './providers/openai.js'
 import { AnthropicProvider } from './providers/anthropic.js'
@@ -52,15 +52,15 @@ export class ClaudeSDK {
   }
 
   /** Single-shot chat */
-  async chat(prompt: string): Promise<EngineResult> {
+  async chat(prompt: string, options?: ChatOptions): Promise<EngineResult> {
     const engine = this.createEngine()
-    return engine.run(prompt)
+    return engine.run(prompt, options?.signal)
   }
 
   /** Streaming chat */
-  async *chatStream(prompt: string): AsyncGenerator<EngineEvent> {
+  async *chatStream(prompt: string, options?: ChatOptions): AsyncGenerator<EngineEvent> {
     const engine = this.createEngine()
-    yield* engine.runStream(prompt)
+    yield* engine.runStream(prompt, options?.signal)
   }
 
   /** Create a persistent session for multi-turn conversations */
@@ -133,14 +133,27 @@ export class ClaudeSDK {
 
 /** Persistent session for multi-turn conversations */
 export class Session {
+  private controller = new AbortController()
+
   constructor(private engine: Engine) {}
 
+  /** AbortSignal governing the current (or next) turn. */
+  get signal(): AbortSignal {
+    return this.controller.signal
+  }
+
+  /** Abort the in-flight turn, then reset so the next turn starts clean. */
+  abort(): void {
+    this.controller.abort()
+    this.controller = new AbortController()
+  }
+
   async chat(prompt: string): Promise<EngineResult> {
-    return this.engine.run(prompt)
+    return this.engine.run(prompt, this.controller.signal)
   }
 
   async *chatStream(prompt: string): AsyncGenerator<EngineEvent> {
-    yield* this.engine.runStream(prompt)
+    yield* this.engine.runStream(prompt, this.controller.signal)
   }
 
   reset(): void {

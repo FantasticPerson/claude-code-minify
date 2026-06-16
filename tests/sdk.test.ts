@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { ClaudeSDK } from '../src/index.js'
+import { MockProvider, type MockResponse } from './helpers/mock-provider.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
@@ -214,5 +215,72 @@ describe('Memory', () => {
     await mgr.delete('to-delete')
     const memories = await mgr.load('feedback')
     expect(memories.find(m => m.name === 'to-delete')).toBeUndefined()
+  })
+})
+
+describe('ClaudeSDK: session interruption', () => {
+  let tmpDir: string
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-sdk-interrupt-'))
+  })
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true }).catch(() => {})
+  })
+
+  function createSDK(responses: MockResponse[], delayMs = 0): ClaudeSDK {
+    const sdk = new ClaudeSDK({
+      provider: 'openai',
+      baseURL: 'http://localhost:11434/v1',
+      apiKey: 'test',
+      model: 'm',
+      workingDir: tmpDir,
+    })
+    // Inject a controllable mock provider (ClaudeSDK.chat routes through this.provider)
+    ;(sdk as any).provider = new MockProvider(responses, delayMs)
+    return sdk
+  }
+
+  it('chat() returns interrupted result when signal already aborted', async () => {
+    const sdk = createSDK([{ text: 'hi' }])
+    const controller = new AbortController()
+    controller.abort()
+    const result = await sdk.chat('test', { signal: controller.signal })
+    expect(result.interrupted).toBe(true)
+  })
+
+  it('chatStream() yields interrupted when aborted mid-stream', async () => {
+    const sdk = createSDK([{ text: 'Hello world long response' }], 5)
+    const controller = new AbortController()
+    const events: any[] = []
+    for await (const event of sdk.chatStream('test', { signal: controller.signal })) {
+      events.push(event)
+      if (event.type === 'text') controller.abort()
+    }
+    expect(events.find(e => e.type === 'interrupted')).toBeDefined()
+  })
+
+  it('Session.abort() interrupts an in-flight chatStream', async () => {
+    const sdk = createSDK([{ text: 'Hello world long response' }], 5)
+    const session = sdk.createSession()
+    const events: any[] = []
+    for await (const event of session.chatStream('test')) {
+      events.push(event)
+      if (event.type === 'text') session.abort()
+    }
+    expect(events.find(e => e.type === 'interrupted')).toBeDefined()
+  })
+
+  it('Session can chat again after abort (controller reset)', async () => {
+    const sdk = createSDK([{ text: 'first' }, { text: 'second response' }], 5)
+    const session = sdk.createSession()
+    // First call: abort mid-stream
+    for await (const event of session.chatStream('first')) {
+      if (event.type === 'text') { session.abort(); break }
+    }
+    // Second call: should complete normally with the next mock response
+    const result = await session.chat('second')
+    expect(result.interrupted).toBeFalsy()
+    expect(result.text).toContain('second response')
   })
 })
