@@ -49,6 +49,7 @@ export interface ChatParams {
   tools: ToolDefinition[]
   maxTokens: number
   temperature?: number
+  signal?: AbortSignal
 }
 
 export interface ChatResponse {
@@ -175,6 +176,7 @@ export interface ToolContext {
   tools?: ToolsConfig
   onProgress?: (msg: string) => void
   askUserCallback?: (question: string) => Promise<string>
+  abortSignal?: AbortSignal
 }
 
 export interface ToolResult {
@@ -197,6 +199,7 @@ export interface EngineResult {
   toolCalls: ToolCallRecord[]
   filesWritten: string[]
   usage: UsageInfo
+  interrupted?: boolean
 }
 
 export interface ToolCallRecord {
@@ -211,7 +214,13 @@ export type EngineEvent =
   | { type: 'tool_start'; name: string; params: any }
   | { type: 'tool_end'; name: string; result: ToolResult }
   | { type: 'error'; error: Error }
+  | { type: 'interrupted'; partialText: string; completedToolCalls: ToolCallRecord[]; filesWritten: string[]; usage: UsageInfo }
   | { type: 'complete'; result: EngineResult }
+
+/** 调用 chat/chatStream 时的可选参数 */
+export interface ChatOptions {
+  signal?: AbortSignal
+}
 
 // ============ Memory ============
 

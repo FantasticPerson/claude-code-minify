@@ -162,7 +162,7 @@ describe('Engine: tool execution error', () => {
 // ============================================================================
 
 describe('Engine: abort signal', () => {
-  it('yields error event when signal is already aborted', async () => {
+  it('yields interrupted event when signal is already aborted', async () => {
     const controller = new AbortController()
     controller.abort()
 
@@ -171,13 +171,26 @@ describe('Engine: abort signal', () => {
     })
     const events = await collectEvents(engine.runStream('test'))
 
-    const errorEvent = events.find(e => e.type === 'error')
-    expect(errorEvent).toBeDefined()
-    expect(errorEvent.error.message).toBe('Aborted')
+    const interrupted = events.find(e => e.type === 'interrupted')
+    expect(interrupted).toBeDefined()
+    expect(interrupted.partialText).toBe('')
 
-    // Should not have a complete event
+    // No complete event on interruption
     const complete = events.find(e => e.type === 'complete')
     expect(complete).toBeUndefined()
+  })
+
+  it('run() returns interrupted result when signal already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+
+    const engine = createTestEngine([{ text: 'should not see this' }], {
+      abortSignal: controller.signal,
+    })
+    const result = await engine.run('test')
+
+    expect(result.interrupted).toBe(true)
+    expect(result.text).toBe('')
   })
 })
 

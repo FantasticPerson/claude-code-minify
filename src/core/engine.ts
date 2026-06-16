@@ -1,7 +1,7 @@
 import {
   ToolUseBlock, ToolResultBlock, EngineResult, EngineEvent,
   ToolContext, ToolResult, ChatParams, UsageInfo, SecurityConfig,
-  ContextConfig, ToolsConfig, GuardrailsConfig,
+  ContextConfig, ToolsConfig, GuardrailsConfig, ToolCallRecord,
 } from './types.js'
 import { LLMProvider, estimateMessagesTokens, estimateToolDefsTokens, estimateSystemPromptTokens } from '../providers/base.js'
 import { ToolSpec, createToolDefinition } from '../tools/base.js'
@@ -76,11 +76,23 @@ export class Engine {
     this.onToolEnd = options.onToolEnd
   }
 
-  async run(prompt: string): Promise<EngineResult> {
+  async run(prompt: string, signal?: AbortSignal): Promise<EngineResult> {
     logger.log('engine', 'run() called', { promptLength: prompt.length })
     const events: EngineEvent[] = []
-    for await (const event of this.runStream(prompt)) {
+    for await (const event of this.runStream(prompt, signal)) {
       events.push(event)
+    }
+    const interrupted = events.find(e => e.type === 'interrupted') as
+      | { type: 'interrupted'; partialText: string; completedToolCalls: ToolCallRecord[]; filesWritten: string[]; usage: UsageInfo }
+      | undefined
+    if (interrupted) {
+      return {
+        text: interrupted.partialText,
+        toolCalls: interrupted.completedToolCalls,
+        filesWritten: interrupted.filesWritten,
+        usage: interrupted.usage,
+        interrupted: true,
+      }
     }
     const complete = events.find(e => e.type === 'complete')
     return (complete as { type: 'complete'; result: EngineResult } | undefined)?.result ?? {
@@ -91,8 +103,10 @@ export class Engine {
     }
   }
 
-  async *runStream(prompt: string): AsyncGenerator<EngineEvent> {
+  async *runStream(prompt: string, signal?: AbortSignal): AsyncGenerator<EngineEvent> {
     logger.log('engine', 'runStream() started', { promptLength: prompt.length, sessionId: this.sessionId })
+
+    const sig = signal ?? this.abortSignal
 
     this.context.add(userMessage(prompt))
 
@@ -107,8 +121,8 @@ export class Engine {
     let totalUsage: UsageInfo = { inputTokens: 0, outputTokens: 0 }
 
     for (let round = 0; round < this.maxToolRounds; round++) {
-      if (this.abortSignal?.aborted) {
-        yield { type: 'error', error: new Error('Aborted') }
+      if (sig?.aborted) {
+        yield { type: 'interrupted', partialText: totalText, completedToolCalls: toolCalls, filesWritten, usage: totalUsage }
         return
       }
 
