@@ -86,6 +86,34 @@ describe('bash tool', () => {
     expect(result.isError).toBe(true)
     expect(result.output).toContain('Error')
   })
+
+  it('aborts long-running command via abortSignal and kills process tree', async () => {
+    const controller = new AbortController()
+    const start = Date.now()
+    const execPromise = bashTool.execute(
+      { command: 'sleep 5' },
+      ctx({ abortSignal: controller.signal }),
+    )
+    await new Promise(r => setTimeout(r, 100))
+    controller.abort()
+    const result = await execPromise
+    const elapsed = Date.now() - start
+
+    // Interrupt takes effect: returns fast with isError
+    expect(elapsed).toBeLessThan(2000)
+    expect(result.isError).toBe(true)
+    expect(result.output).toMatch(/abort/i)
+
+    // Process group killed, no leftover sleep process
+    let leftover = 0
+    try {
+      leftover = execSync('pgrep -f "[s]leep 5"', { stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim().split('\n').length
+    } catch {
+      leftover = 0
+    }
+    expect(leftover).toBe(0)
+  }, 8000)
 })
 
 // ============================================================================
