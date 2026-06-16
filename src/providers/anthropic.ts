@@ -19,7 +19,7 @@ export class AnthropicProvider implements LLMProvider {
       tools: this.convertTools(params.tools),
       max_tokens: params.maxTokens,
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
-    })
+    }, params.signal ? { signal: params.signal } : undefined)
 
     const textBlocks = response.content.filter(b => b.type === 'text')
     const toolBlocks = response.content.filter(b => b.type === 'tool_use') as Anthropic.ToolUseBlock[]
@@ -41,12 +41,13 @@ export class AnthropicProvider implements LLMProvider {
       tools: this.convertTools(params.tools),
       max_tokens: params.maxTokens,
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
-    })
+    }, params.signal ? { signal: params.signal } : {})
 
     const toolBuffers = new Map<number, { id: string; name: string; input: string }>()
     let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 }
     let stopReason = 'end_turn'
 
+    try {
     for await (const event of stream) {
       if (event.type === 'content_block_start') {
         if (event.content_block.type === 'tool_use') {
@@ -77,6 +78,10 @@ export class AnthropicProvider implements LLMProvider {
       } else if (event.type === 'message_start') {
         if (event.message?.usage) usage = { inputTokens: event.message.usage.input_tokens, outputTokens: event.message.usage.output_tokens }
       }
+    }
+    } catch (err) {
+      if (params.signal?.aborted) return
+      throw err
     }
 
     yield { type: 'message_end', usage, stopReason }

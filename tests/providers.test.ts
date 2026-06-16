@@ -606,3 +606,119 @@ describe('AnthropicProvider: countTokens', () => {
     expect(count).toBeGreaterThan(0)
   })
 })
+
+// ============================================================================
+// OpenAI Provider — signal passthrough & abort
+// ============================================================================
+
+describe('OpenAIProvider: signal passthrough & abort', () => {
+  it('passes signal as request option to client create', async () => {
+    const provider = new OpenAIProvider('https://api.openai.com/v1', 'test-key')
+    const client = (provider as any).client
+    const controller = new AbortController()
+
+    vi.spyOn(client.chat.completions, 'create').mockResolvedValue({
+      [Symbol.asyncIterator]() {
+        return { async next() { return { value: undefined, done: true } } }
+      },
+    } as any)
+
+    await collectStreamEvents(provider.chatStream({
+      model: 'gpt-4',
+      system: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      tools: [],
+      maxTokens: 1024,
+      signal: controller.signal,
+    }))
+
+    expect(client.chat.completions.create.mock.calls[0][1]).toEqual({ signal: controller.signal })
+  })
+
+  it('stops silently without message_end when signal already aborted', async () => {
+    const provider = new OpenAIProvider('https://api.openai.com/v1', 'test-key')
+    const client = (provider as any).client
+    const controller = new AbortController()
+
+    vi.spyOn(client.chat.completions, 'create').mockResolvedValue({
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            if (controller.signal.aborted) throw new Error('aborted')
+            return { value: undefined, done: true }
+          },
+        }
+      },
+    } as any)
+
+    controller.abort()
+    const events = await collectStreamEvents(provider.chatStream({
+      model: 'gpt-4',
+      system: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      tools: [],
+      maxTokens: 1024,
+      signal: controller.signal,
+    }))
+
+    expect(events.find(e => e.type === 'message_end')).toBeUndefined()
+  })
+})
+
+// ============================================================================
+// Anthropic Provider — signal passthrough & abort
+// ============================================================================
+
+describe('AnthropicProvider: signal passthrough & abort', () => {
+  it('passes signal as request option to client stream', async () => {
+    const provider = new AnthropicProvider('test-key')
+    const client = (provider as any).client
+    const controller = new AbortController()
+
+    vi.spyOn(client.messages, 'stream').mockReturnValue({
+      [Symbol.asyncIterator]() {
+        return { async next() { return { value: undefined, done: true } } }
+      },
+    } as any)
+
+    await collectStreamEvents(provider.chatStream({
+      model: 'claude-3',
+      system: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      tools: [],
+      maxTokens: 1024,
+      signal: controller.signal,
+    }))
+
+    expect(client.messages.stream.mock.calls[0][1]).toEqual({ signal: controller.signal })
+  })
+
+  it('stops silently without message_end when signal already aborted', async () => {
+    const provider = new AnthropicProvider('test-key')
+    const client = (provider as any).client
+    const controller = new AbortController()
+
+    vi.spyOn(client.messages, 'stream').mockReturnValue({
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            if (controller.signal.aborted) throw new Error('aborted')
+            return { value: undefined, done: true }
+          },
+        }
+      },
+    } as any)
+
+    controller.abort()
+    const events = await collectStreamEvents(provider.chatStream({
+      model: 'claude-3',
+      system: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      tools: [],
+      maxTokens: 1024,
+      signal: controller.signal,
+    }))
+
+    expect(events.find(e => e.type === 'message_end')).toBeUndefined()
+  })
+})

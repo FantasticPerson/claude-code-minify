@@ -21,7 +21,7 @@ export class OpenAIProvider implements LLMProvider {
       tools: tools.length > 0 ? tools : undefined,
       max_tokens: params.maxTokens,
       temperature: params.temperature,
-    })
+    }, params.signal ? { signal: params.signal } : undefined)
 
     const choice = response.choices?.[0]
     if (!choice?.message) {
@@ -54,12 +54,13 @@ export class OpenAIProvider implements LLMProvider {
       temperature: params.temperature,
       stream: true,
       stream_options: { include_usage: true },
-    })
+    }, params.signal ? { signal: params.signal } : undefined)
 
     const toolBuffers = new Map<number, { id: string; name: string; input: string }>()
     let usage: UsageInfo = { inputTokens: 0, outputTokens: 0 }
     let stopReason = 'end_turn'
 
+    try {
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta
       if (!delta) {
@@ -104,6 +105,10 @@ export class OpenAIProvider implements LLMProvider {
       if (finish) {
         stopReason = finish === 'tool_calls' ? 'tool_use' : finish
       }
+    }
+    } catch (err) {
+      if (params.signal?.aborted) return
+      throw err
     }
 
     for (const [, buf] of toolBuffers) {
