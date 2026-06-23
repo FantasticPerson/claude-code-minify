@@ -2,7 +2,7 @@
 export type {
   ClaudeSDKConfig, Message, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock,
   EngineResult, EngineEvent, ToolResult, ToolContext, ToolRegistration, Skill, Memory,
-  MemoryType, UsageInfo, StreamEvent, ChatParams, ChatResponse, ChatOptions, ToolDefinition,
+  MemoryType, UsageInfo, StreamEvent, ChatParams, ChatResponse, ChatOptions, ToolDefinition, ToolExecute,
   ContextConfig, ToolsConfig, ToolBashConfig, ToolGrepConfig, ToolGlobConfig, ToolReadConfig, ToolWriteConfig, ToolEditConfig,
   GuardrailsConfig, DebugConfig, LogCategory,
 } from './core/types.js'
@@ -48,7 +48,7 @@ export class ClaudeSDK {
         ? ['file_write', 'file_edit', 'bash', 'grep', 'glob', 'todo_write']
         : []
     )
-    this.tools = createBuiltinTools(disabled)
+    this.tools = createBuiltinTools(disabled, this.config.tools?.wrapExecute)
   }
 
   /** Single-shot chat */
@@ -80,11 +80,17 @@ export class ClaudeSDK {
 
   /** Register a custom tool */
   registerTool(tool: ToolRegistration): void {
+    if (this.tools.has(tool.name)) {
+      console.warn(`[claude-code-minify] registerTool: 覆盖已有工具 '${tool.name}'，其内置 wrap（如文件级互斥锁）将失效`)
+    }
+    const wrapped = this.config.tools?.wrapExecute
+      ? this.config.tools.wrapExecute(tool.name, tool.execute)
+      : tool.execute
     registerTool(this.tools, {
       name: tool.name,
       description: tool.description,
       schema: tool.schema,
-      execute: tool.execute,
+      execute: wrapped,
     })
   }
 

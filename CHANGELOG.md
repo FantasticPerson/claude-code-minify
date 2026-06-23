@@ -2,6 +2,16 @@
 
 本项目所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+- **`tools.wrapExecute` 工具执行拦截器** —— 注册时对任意工具的 `execute` 包一层（审计/日志/限流），用户 wrap 叠加在内置 wrap 之外
+- **`file_edit`/`file_write` 进程内文件级互斥锁** —— 同进程内并发多个 `chat()`/`Session` 时，对同一文件的读写自动串行化（不同文件仍并行），作为 `wrapExecute` 的首个内置用例
+- 导出 `ToolExecute` 类型
+
+### 修复
+- 多实例并发写同一文件时 `file_edit` 丢更新（read-modify-write 竞态：A 读旧→B 读旧→A 写→B 写 覆盖 A）
+
 ## [1.2.0] - 2026-06-16
 
 ### 新增

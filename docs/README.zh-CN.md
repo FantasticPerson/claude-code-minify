@@ -356,6 +356,12 @@ interface GuardrailsConfig {
 interface ToolsConfig {
   /** 禁用的内置工具名称列表，如 ['bash', 'file_edit'] */
   disabled?: string[]
+  /**
+   * 工具执行拦截器：注册时对每个工具的 execute 包一层，可用于审计/日志/限流等。
+   * 内置 file_edit/file_write 的进程内文件级互斥锁也通过此机制实现（最内层），
+   * 用户 wrapExecute 叠加在外层，无法绕过该锁。
+   */
+  wrapExecute?: (name: string, execute: ToolExecute) => ToolExecute
   /** bash 工具配置 */
   bash?: {
     /** 默认命令超时（毫秒），默认 120000 */
@@ -441,6 +447,25 @@ const sdk = new ClaudeSDK({
 ```
 
 当同时设置 `mode: 'general'` 和 `tools.disabled` 时，`tools.disabled` 优先。
+
+**`tools.wrapExecute`** — 工具执行拦截器，对每个工具的 `execute` 包一层（审计、日志、限流等）：
+
+```typescript
+const sdk = new ClaudeSDK({
+  provider: 'anthropic',
+  apiKey: 'sk-ant-xxx',
+  model: 'claude-sonnet-4-6',
+  workingDir: '.',
+  tools: {
+    wrapExecute: (name, execute) => async (params, ctx) => {
+      console.log(`[audit] ${name}`, params)
+      return execute(params, ctx)
+    },
+  },
+})
+```
+
+内置 `file_edit`/`file_write` 已默认套进程内文件级互斥锁（最内层），同一进程内并发调用同一文件时自动串行化；用户 `wrapExecute` 在外层叠加，无法绕过该锁。
 
 ### 安全策略配置
 
@@ -1417,6 +1442,7 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。`general` 模式下
 - 自动递归创建所有父目录
 - 如果文件已存在则覆盖
 - 写入内容大小受 `security.file.maxFileSize` 和 `tools.write.maxFileSize` 双重限制
+- 同一进程内并发调用时，对同一文件的写入受进程内文件级互斥锁保护（不同文件仍并行；跨进程不保证）
 - 写入成功后，文件路径会被记录到 `EngineResult.filesWritten`
 
 ---
@@ -1439,6 +1465,7 @@ SDK 内置 8 个工具，AI 在对话过程中自动调用。`general` 模式下
 - `replace_all` 为 `false` 时，`old_string` 必须在文件中唯一，否则报错
 - `old_string` 和 `new_string` 不能相同
 - 文件大小受 `security.file.maxFileSize` 和 `tools.edit.maxFileSize`（默认 10MB）双重限制
+- 同一进程内并发调用时，对同一文件的编辑受进程内文件级互斥锁保护（整个读-改-写串行化；不同文件仍并行；跨进程不保证）
 - 替换完成后返回替换的次数
 
 ---
@@ -2111,7 +2138,7 @@ const sdk = new ClaudeSDK({
 
 ### Q: 如何处理大量文件操作？
 
-工具调用按顺序串行执行。如果需要并行操作，可以注册自定义工具来批量处理：
+单次对话内工具调用按顺序串行执行。若在同一进程内并发运行多个 `chat()`/`Session`，对同一文件的 `file_edit`/`file_write` 会通过进程内文件级互斥锁自动串行化（不同文件仍并行；跨进程不保证）。如需进一步并行操作，可注册自定义工具批量处理：
 
 ```typescript
 sdk.registerTool({

@@ -159,6 +159,12 @@ export interface ToolEditConfig {
 export interface ToolsConfig {
   /** 禁用的内置工具名称列表，如 ['bash', 'file_edit'] */
   disabled?: string[]
+  /**
+   * 工具执行拦截器：注册时对每个工具的 execute 包一层，可用于审计/日志/限流等。
+   * 内置 file_edit/file_write 的进程内文件级互斥锁也通过此机制实现（最内层），
+   * 用户传入的 wrapExecute 叠加在外层，故无法绕过该锁。
+   */
+  wrapExecute?: (name: string, execute: ToolExecute) => ToolExecute
   bash?: ToolBashConfig
   grep?: ToolGrepConfig
   glob?: ToolGlobConfig
@@ -184,6 +190,9 @@ export interface ToolResult {
   isError?: boolean
   metadata?: Record<string, any>
 }
+
+/** 工具执行函数签名。wrapExecute 据此对 execute 包一层。 */
+export type ToolExecute = (params: any, context: ToolContext) => Promise<ToolResult>
 
 export interface ToolRegistration {
   name: string

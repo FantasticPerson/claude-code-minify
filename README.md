@@ -207,6 +207,7 @@ Customize individual tool behavior. All fields are optional with sensible defaul
 ```typescript
 interface ToolsConfig {
   disabled?: string[]               // Disable builtin tools, e.g. ['bash', 'file_edit']
+  wrapExecute?: (name: string, execute: ToolExecute) => ToolExecute  // Wrap each tool's execute (audit/log/throttle). Built-in file_edit/file_write are already wrapped with an in-process file lock.
   bash?: {
     defaultTimeout?: number          // Default command timeout (ms), default 120000
     maxTimeout?: number              // Maximum allowed timeout (ms), default 600000
@@ -271,6 +272,25 @@ const sdk = new ClaudeSDK({
 ```
 
 When both `mode: 'general'` and `tools.disabled` are set, `tools.disabled` takes precedence.
+
+**`tools.wrapExecute`** — Wrap each tool's `execute` (audit, logging, throttling, etc.):
+
+```typescript
+const sdk = new ClaudeSDK({
+  provider: 'anthropic',
+  apiKey: 'sk-ant-xxx',
+  model: 'claude-sonnet-4-6',
+  workingDir: '.',
+  tools: {
+    wrapExecute: (name, execute) => async (params, ctx) => {
+      console.log(`[audit] ${name}`, params)
+      return execute(params, ctx)
+    },
+  },
+})
+```
+
+`file_edit`/`file_write` are already wrapped with an in-process per-file lock (innermost), so concurrent calls to the same file within one process are serialized automatically. User `wrapExecute` is applied on top and cannot bypass it.
 
 ### Security Configuration
 
@@ -475,7 +495,7 @@ sdk.registerTool({
 
 ## Built-in Tools
 
-> In `general` mode, only `file_read` and `ask_user` are registered. In `coding` mode (default), all 8 tools are available. Use `tools.disabled` to customize.
+> In `general` mode, only `file_read` and `ask_user` are registered. In `coding` mode (default), all 8 tools are available. Use `tools.disabled` to customize. `file_edit`/`file_write` are protected by an in-process per-file lock: concurrent calls to the same file within one process are serialized (different files stay parallel; cross-process is not guarded).
 
 | Tool | Purpose | Key Params | Security Config |
 |------|---------|------------|----------------|

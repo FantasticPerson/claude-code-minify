@@ -8,6 +8,7 @@ import { grepTool } from '../src/tools/grep.js'
 import { globTool } from '../src/tools/glob.js'
 import { todoWriteTool } from '../src/tools/todo-write.js'
 import { askUserTool } from '../src/tools/ask-user.js'
+import { createBuiltinTools } from '../src/tools/index.js'
 import { ToolContext } from '../src/core/types.js'
 
 // ============================================================================
@@ -258,5 +259,48 @@ describe('ask_user tool', () => {
     expect(result.isError).toBe(true)
     expect(result.output).toContain('no user interaction callback')
     expect(result.metadata?.needsUserResponse).toBe(true)
+  })
+})
+
+// ============================================================================
+// file-level lock wrap (createBuiltinTools)
+// ============================================================================
+
+describe('file lock wrap', () => {
+  it('wrap 后 file_edit 单次编辑行为不变', async () => {
+    const tools = createBuiltinTools()
+    const edit = tools.get('file_edit')!
+    const file = path.join(tmpDir, `wrap-edit-${Date.now()}.txt`)
+    await fs.writeFile(file, 'hello world', 'utf-8')
+    const r = await edit.execute(
+      { file_path: file, old_string: 'hello', new_string: 'hi' },
+      ctx(),
+    )
+    expect(r.isError).toBeFalsy()
+    expect(await fs.readFile(file, 'utf-8')).toBe('hi world')
+  })
+
+  it('wrap 后 file_write 单次写入行为不变', async () => {
+    const tools = createBuiltinTools()
+    const write = tools.get('file_write')!
+    const file = path.join(tmpDir, `wrap-write-${Date.now()}.txt`)
+    const r = await write.execute({ file_path: file, content: 'new content' }, ctx())
+    expect(r.isError).toBeFalsy()
+    expect(await fs.readFile(file, 'utf-8')).toBe('new content')
+  })
+
+  it('同文件并发 file_edit 不同锚点：两个更新都生效（锁保证串行）', async () => {
+    const tools = createBuiltinTools()
+    const edit = tools.get('file_edit')!
+    const file = path.join(tmpDir, `wrap-concurrent-${Date.now()}.txt`)
+    // 跑多轮提升置信：无锁时基于旧内容的覆盖会让其中一轮丢更新
+    for (let i = 0; i < 10; i++) {
+      await fs.writeFile(file, 'A1\nB1\n', 'utf-8')
+      await Promise.all([
+        edit.execute({ file_path: file, old_string: 'A1', new_string: 'A2' }, ctx()),
+        edit.execute({ file_path: file, old_string: 'B1', new_string: 'B2' }, ctx()),
+      ])
+      expect(await fs.readFile(file, 'utf-8')).toBe('A2\nB2\n')
+    }
   })
 })
