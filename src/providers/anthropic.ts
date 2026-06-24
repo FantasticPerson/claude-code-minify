@@ -6,8 +6,8 @@ import { logger } from '../core/logger.js'
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
 
-  constructor(apiKey: string, baseURL?: string) {
-    this.client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) })
+  constructor(apiKey: string, baseURL?: string, options?: { timeout?: number; maxRetries?: number }) {
+    this.client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}), ...(options ?? {}) })
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {

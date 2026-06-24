@@ -273,6 +273,10 @@ export interface DebugConfig {
 export interface ClaudeSDKConfig {
   provider: 'openai' | 'anthropic'
   baseURL?: string
+  /** 单次请求超时（毫秒）；不传则用 SDK 默认（openai/anthropic 均为 10 分钟） */
+  timeout?: number
+  /** 请求失败最大重试次数；不传则用 SDK 默认（openai/anthropic 均为 2） */
+  maxRetries?: number
   apiKey: string
   model: string
   workingDir: string

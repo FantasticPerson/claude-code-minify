@@ -275,6 +275,12 @@ interface ClaudeSDKConfig {
   /** API 基础 URL，可选。用于兼容 API 的第三方服务 */
   baseURL?: string
 
+  /** 单次请求超时（毫秒）。不传则用 SDK 默认（openai/anthropic 均为 10 分钟） */
+  timeout?: number
+
+  /** 请求失败最大重试次数。不传则用 SDK 默认（openai/anthropic 均为 2 次） */
+  maxRetries?: number
+
   /** 运行模式：'coding' 开发助手（默认），'general' 通用对话 */
   mode?: 'coding' | 'general'
 

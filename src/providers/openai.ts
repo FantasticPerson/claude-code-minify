@@ -6,8 +6,8 @@ import { logger } from '../core/logger.js'
 export class OpenAIProvider implements LLMProvider {
   private client: OpenAI
 
-  constructor(baseURL: string, apiKey: string) {
-    this.client = new OpenAI({ baseURL, apiKey })
+  constructor(baseURL: string, apiKey: string, options?: { timeout?: number; maxRetries?: number }) {
+    this.client = new OpenAI({ baseURL, apiKey, ...(options ?? {}) })
   }
 
   async chat(params: ChatParams): Promise<ChatResponse> {

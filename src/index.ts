@@ -36,9 +36,9 @@ export class ClaudeSDK {
     }
 
     if (config.provider === 'openai') {
-      this.provider = new OpenAIProvider(config.baseURL || 'https://api.openai.com/v1', config.apiKey)
+      this.provider = new OpenAIProvider(config.baseURL || 'https://api.openai.com/v1', config.apiKey, { timeout: config.timeout, maxRetries: config.maxRetries })
     } else {
-      this.provider = new AnthropicProvider(config.apiKey, config.baseURL)
+      this.provider = new AnthropicProvider(config.apiKey, config.baseURL, { timeout: config.timeout, maxRetries: config.maxRetries })
     }
 
     // general 模式默认只保留 file_read 和 ask_user

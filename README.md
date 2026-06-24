@@ -157,6 +157,8 @@ interface ClaudeSDKConfig {
   model: string                      // Required
   workingDir: string                 // Required
   baseURL?: string                   // For compatible APIs
+  timeout?: number                   // Request timeout in ms (default: SDK's 10 min)
+  maxRetries?: number                // Max retries on failure (default: 2)
   mode?: 'coding' | 'general'       // Default: 'coding'
   maxTokens?: number                 // Default: 4096
   contextWindow?: number             // Default: 200000
