@@ -2,6 +2,11 @@
 
 本项目所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-06-24
+
+### 新增
+- **`timeout`/`maxRetries` 请求超时与重试可配置** —— `ClaudeSDKConfig` 新增两个可选字段，控制 SDK 客户端的请求超时（毫秒）与失败重试次数；`OpenAIProvider`/`AnthropicProvider` 构造函数新增可选 `options` 参数透传给底层 SDK。不传则沿用各 SDK 自带默认（超时 10 分钟、重试 2 次）。
+
 ## [1.3.0] - 2026-06-23
 
 ### 新增
